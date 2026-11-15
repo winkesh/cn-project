@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+data/
+results/videos/
+*.mp4
+*.avi
+*.y4m
+.pytest_cache/
+logs/
+# trained weights and experiment outputs are added explicitly once final
+weights/
+results/
