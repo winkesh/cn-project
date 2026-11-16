@@ -1,0 +1,10 @@
+scheme,psnr_mean,psnr_p5,ssim_mean,frozen_pct,stall_ms,latency_p95,overhead_pct,infer_ms_p95
+TCP,36.85,36.14,0.98,0.0,393.6,693.74,5.43,
+Phantom + NACK,36.77,35.96,0.98,0.0,0.0,125.0,5.13,5.85
+NACK + copy,36.64,35.43,0.97,0.0,0.0,125.0,5.13,
+FEC k=5 + copy,35.94,33.47,0.97,0.0,0.0,125.0,22.9,
+"Phantom-Interp (framegen, +33 ms)",35.79,33.87,0.97,0.0,0.0,158.33,0.0,3.06
+Phantom (RepairNet),35.69,33.91,0.97,0.0,0.0,125.0,0.0,5.7
+Flow extrapolation,35.38,33.17,0.97,0.0,0.0,125.0,0.0,
+Copy-tile (no retx),34.16,30.89,0.96,0.0,0.0,125.0,0.0,
+Freeze (no retx),15.04,13.86,0.45,99.64,9422.22,125.0,0.0,

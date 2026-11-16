@@ -8,6 +8,7 @@ results/videos/
 *.y4m
 .pytest_cache/
 logs/
-# trained weights and experiment outputs are added explicitly once final
-weights/
-results/
+# framegen checkpoint belongs to the separate framegen project: copy it into weights/ locally
+weights/framegen.pt
+weights/*_v1*
+results/*_v1*

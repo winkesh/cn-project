@@ -1,0 +1,6 @@
+content,Flow extrapolation,FEC k=5 + copy,NACK + copy,Phantom (RepairNet),Phantom + NACK,"Phantom-Interp (framegen, +33 ms)"
+film,3.33,2.51,4.61,3.5,5.15,3.59
+game,0.64,2.32,4.38,1.89,4.77,1.75
+motion,3.66,2.0,3.73,3.33,4.32,3.27
+people,0.54,0.74,1.25,0.67,1.31,0.88
+sports,2.07,1.94,3.49,2.37,3.91,2.54

@@ -55,6 +55,7 @@ def main():
         line(axs[2], loss, "latency_p95", "packet loss (%)", "P95 frame latency (ms)", "Latency vs loss")
         axs[2].set_yscale("log")
         axs[0].legend(fontsize=8)
+        axs[2].legend(fontsize=7)
         fig.tight_layout()
         fig.savefig(out / "e1_loss.png", dpi=150)
 
@@ -80,6 +81,7 @@ def main():
         axs[0].axvline(100, color="k", ls=":", lw=1)
         axs[0].text(101, axs[0].get_ylim()[0] + 0.3, "RTT = jitter buffer", fontsize=8)
         axs[0].legend(fontsize=8)
+        axs[1].legend(fontsize=7)
         fig.tight_layout()
         fig.savefig(out / "e3_rtt.png", dpi=150)
 

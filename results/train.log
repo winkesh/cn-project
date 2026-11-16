@@ -1,0 +1,66 @@
+train videos: ['Johnny.avi', 'KristenAndSara.avi', 'ducks_take_off.avi', 'in_to_tree.avi', 'mobcal.avi', 'old_town_cross.avi', 'parkrun.avi', 'sintel_trailer.avi', 'vidyo1.avi', 'vidyo3.avi', 'vidyo4.avi']
++ 1500 game triplets from /home/admo/framegen/data/hr/game_train (+100 held out for validation)
+frames: 93376 train / 740 val
+RepairNet params: 1.93M on cuda
+step    500 loss 0.0307 | val masked PSNR ours 25.18 dB vs copy 24.85 dB (+0.33) | 58.8 min left
+step   1000 loss 0.0294 | val masked PSNR ours 25.90 dB vs copy 24.85 dB (+1.05) | 57.8 min left
+step   1500 loss 0.0241 | val masked PSNR ours 27.89 dB vs copy 24.85 dB (+3.04) | 56.8 min left
+step   2000 loss 0.0195 | val masked PSNR ours 28.50 dB vs copy 24.85 dB (+3.65) | 55.9 min left
+step   2500 loss 0.0266 | val masked PSNR ours 28.79 dB vs copy 24.85 dB (+3.93) | 54.9 min left
+step   3000 loss 0.0316 | val masked PSNR ours 28.74 dB vs copy 24.85 dB (+3.89) | 53.9 min left
+step   3500 loss 0.0270 | val masked PSNR ours 29.09 dB vs copy 24.85 dB (+4.24) | 53.0 min left
+step   4000 loss 0.0238 | val masked PSNR ours 29.17 dB vs copy 24.85 dB (+4.31) | 52.0 min left
+step   4500 loss 0.0193 | val masked PSNR ours 29.18 dB vs copy 24.85 dB (+4.33) | 51.0 min left
+step   5000 loss 0.0195 | val masked PSNR ours 29.22 dB vs copy 24.85 dB (+4.37) | 50.1 min left
+step   5500 loss 0.0307 | val masked PSNR ours 29.20 dB vs copy 24.85 dB (+4.35) | 49.1 min left
+step   6000 loss 0.0245 | val masked PSNR ours 29.27 dB vs copy 24.85 dB (+4.42) | 48.1 min left
+step   6500 loss 0.0215 | val masked PSNR ours 29.48 dB vs copy 24.85 dB (+4.63) | 47.1 min left
+step   7000 loss 0.0298 | val masked PSNR ours 29.41 dB vs copy 24.85 dB (+4.55) | 46.2 min left
+step   7500 loss 0.0152 | val masked PSNR ours 29.46 dB vs copy 24.85 dB (+4.61) | 45.2 min left
+step   8000 loss 0.0152 | val masked PSNR ours 29.59 dB vs copy 24.85 dB (+4.73) | 44.2 min left
+step   8500 loss 0.0245 | val masked PSNR ours 29.50 dB vs copy 24.85 dB (+4.65) | 43.3 min left
+step   9000 loss 0.0216 | val masked PSNR ours 29.46 dB vs copy 24.85 dB (+4.61) | 42.3 min left
+step   9500 loss 0.0293 | val masked PSNR ours 29.36 dB vs copy 24.85 dB (+4.51) | 41.3 min left
+step  10000 loss 0.0202 | val masked PSNR ours 29.64 dB vs copy 24.85 dB (+4.79) | 40.3 min left
+step  10500 loss 0.0253 | val masked PSNR ours 29.61 dB vs copy 24.85 dB (+4.76) | 39.4 min left
+step  11000 loss 0.0227 | val masked PSNR ours 29.44 dB vs copy 24.85 dB (+4.59) | 38.4 min left
+step  11500 loss 0.0241 | val masked PSNR ours 29.56 dB vs copy 24.85 dB (+4.71) | 37.4 min left
+step  12000 loss 0.0269 | val masked PSNR ours 29.59 dB vs copy 24.85 dB (+4.74) | 36.5 min left
+step  12500 loss 0.0254 | val masked PSNR ours 29.66 dB vs copy 24.85 dB (+4.81) | 35.5 min left
+step  13000 loss 0.0169 | val masked PSNR ours 29.60 dB vs copy 24.85 dB (+4.75) | 34.5 min left
+step  13500 loss 0.0156 | val masked PSNR ours 29.68 dB vs copy 24.85 dB (+4.83) | 33.5 min left
+step  14000 loss 0.0184 | val masked PSNR ours 29.67 dB vs copy 24.85 dB (+4.81) | 32.6 min left
+step  14500 loss 0.0183 | val masked PSNR ours 29.68 dB vs copy 24.85 dB (+4.83) | 31.6 min left
+step  15000 loss 0.0252 | val masked PSNR ours 29.71 dB vs copy 24.85 dB (+4.86) | 30.6 min left
+step  15500 loss 0.0210 | val masked PSNR ours 29.86 dB vs copy 24.85 dB (+5.00) | 29.7 min left
+step  16000 loss 0.0271 | val masked PSNR ours 29.80 dB vs copy 24.85 dB (+4.94) | 28.7 min left
+step  16500 loss 0.0273 | val masked PSNR ours 29.81 dB vs copy 24.85 dB (+4.95) | 27.7 min left
+step  17000 loss 0.0214 | val masked PSNR ours 29.74 dB vs copy 24.85 dB (+4.89) | 26.7 min left
+step  17500 loss 0.0206 | val masked PSNR ours 29.80 dB vs copy 24.85 dB (+4.94) | 25.8 min left
+step  18000 loss 0.0225 | val masked PSNR ours 29.82 dB vs copy 24.85 dB (+4.96) | 24.8 min left
+step  18500 loss 0.0259 | val masked PSNR ours 29.75 dB vs copy 24.85 dB (+4.90) | 23.8 min left
+step  19000 loss 0.0241 | val masked PSNR ours 29.92 dB vs copy 24.85 dB (+5.07) | 22.9 min left
+step  19500 loss 0.0245 | val masked PSNR ours 29.97 dB vs copy 24.85 dB (+5.11) | 21.9 min left
+step  20000 loss 0.0300 | val masked PSNR ours 29.85 dB vs copy 24.85 dB (+5.00) | 20.9 min left
+step  20500 loss 0.0191 | val masked PSNR ours 29.93 dB vs copy 24.85 dB (+5.08) | 19.9 min left
+step  21000 loss 0.0310 | val masked PSNR ours 30.04 dB vs copy 24.85 dB (+5.19) | 19.0 min left
+step  21500 loss 0.0212 | val masked PSNR ours 29.79 dB vs copy 24.85 dB (+4.93) | 18.0 min left
+step  22000 loss 0.0224 | val masked PSNR ours 29.85 dB vs copy 24.85 dB (+5.00) | 17.0 min left
+step  22500 loss 0.0184 | val masked PSNR ours 30.10 dB vs copy 24.85 dB (+5.24) | 16.1 min left
+step  23000 loss 0.0285 | val masked PSNR ours 30.08 dB vs copy 24.85 dB (+5.23) | 15.1 min left
+step  23500 loss 0.0243 | val masked PSNR ours 29.97 dB vs copy 24.85 dB (+5.12) | 14.1 min left
+step  24000 loss 0.0164 | val masked PSNR ours 29.95 dB vs copy 24.85 dB (+5.10) | 13.1 min left
+step  24500 loss 0.0251 | val masked PSNR ours 30.07 dB vs copy 24.85 dB (+5.22) | 12.2 min left
+step  25000 loss 0.0165 | val masked PSNR ours 30.21 dB vs copy 24.85 dB (+5.36) | 11.2 min left
+step  25500 loss 0.0152 | val masked PSNR ours 30.32 dB vs copy 24.85 dB (+5.47) | 10.2 min left
+step  26000 loss 0.0242 | val masked PSNR ours 30.32 dB vs copy 24.85 dB (+5.46) | 9.3 min left
+step  26500 loss 0.0279 | val masked PSNR ours 30.15 dB vs copy 24.85 dB (+5.30) | 8.3 min left
+step  27000 loss 0.0211 | val masked PSNR ours 30.27 dB vs copy 24.85 dB (+5.42) | 7.3 min left
+step  27500 loss 0.0216 | val masked PSNR ours 30.12 dB vs copy 24.85 dB (+5.27) | 6.3 min left
+step  28000 loss 0.0195 | val masked PSNR ours 30.33 dB vs copy 24.85 dB (+5.48) | 5.4 min left
+step  28500 loss 0.0303 | val masked PSNR ours 30.20 dB vs copy 24.85 dB (+5.34) | 4.4 min left
+step  29000 loss 0.0185 | val masked PSNR ours 30.32 dB vs copy 24.85 dB (+5.46) | 3.4 min left
+step  29500 loss 0.0143 | val masked PSNR ours 30.32 dB vs copy 24.85 dB (+5.46) | 2.5 min left
+step  30000 loss 0.0235 | val masked PSNR ours 30.45 dB vs copy 24.85 dB (+5.60) | 1.5 min left
+step  30500 loss 0.0233 | val masked PSNR ours 30.40 dB vs copy 24.85 dB (+5.55) | 0.5 min left
+done. best val masked PSNR 30.45 dB -> weights/repairnet.pt
