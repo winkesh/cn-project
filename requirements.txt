@@ -6,3 +6,4 @@ scikit-image
 pandas
 matplotlib
 pytest
+imageio-ffmpeg   # bundled ffmpeg: H.264 streaming in the demo app and the demo video renderer

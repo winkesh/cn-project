@@ -65,12 +65,15 @@ python -m demo.live_demo --src data/test/clip.mp4          # live side-by-side d
 ```
 
 ### Demo app (upload a video or paste a stream URL)
+Runs on any machine with the Python environment above; a CUDA GPU makes it real time, and no other
+service is needed. Then open the address it prints in a browser.
 ```bash
-# on the GPU box, 720p (open http://<tailscale-ip>:8000 from any machine on the tailnet)
-PHANTOM_RES=720 python -m phantom.app --host <tailscale-ip> --port 8000
-# or locally on a laptop GPU, 360p (open http://127.0.0.1:8000)
-python -m phantom.app
+python -m phantom.app                                  # 360p, http://127.0.0.1:8000 (any laptop GPU)
+PHANTOM_RES=720 python -m phantom.app                  # 720p, needs a faster GPU for 30 fps
+python -m phantom.app --host 0.0.0.0 --port 8000       # also reachable from other devices on the network
 ```
+`--host 0.0.0.0` lets a phone or another laptop on the same network open `http://<this-machine's-IP>:8000`;
+any network path between the browser and the server works (LAN, VPN, port forward).
 Upload any video or paste a stream URL (`.mp4`, HLS `.m3u8`, `rtsp://`). Each frame goes through the real
 packetizer, a lossy channel and the real receiver; the left side shows what the loss does (no repair, a normal
 decoder that drops damaged frames, or copy-last-tile), the right side shows Phantom regenerating the lost tiles

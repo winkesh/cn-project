@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Full pipeline on the GPU box (idi): tests -> data -> train -> evaluate -> plots.
+# Full pipeline on a GPU machine: tests -> data -> train -> evaluate -> plots.
 #   tmux new -s phantom 'bash scripts/run_all.sh 2>&1 | tee logs/run_all.log'
 set -euo pipefail
 cd "$(dirname "$0")/.."

@@ -1,9 +1,10 @@
 """Phantom Frames demo app: HTTP server (standard library only) + H.264 / MJPEG live streams.
 
-    PHANTOM_RES=720 python -m phantom.app --host 100.89.6.83 --port 8000     # on the GPU box (idi)
-    python -m phantom.app                                                    # locally, 360p
+    python -m phantom.app                                  # 360p on 127.0.0.1:8000
+    PHANTOM_RES=720 python -m phantom.app                  # 720p (faster GPU)
+    python -m phantom.app --host 0.0.0.0                   # reachable from other devices on the network
 
-Then open http://<host>:<port>/ in a browser.
+Then open http://<host>:<port>/ in a browser. No external services are required.
 """
 from __future__ import annotations
 
@@ -290,7 +291,8 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     global ENGINE, SAMPLES
     ap = argparse.ArgumentParser()
-    ap.add_argument("--host", default="127.0.0.1", help="use the Tailscale IP to reach it from other machines")
+    ap.add_argument("--host", default="127.0.0.1",
+                    help="address to listen on; 0.0.0.0 makes it reachable from other devices on the network")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--weights", default="weights/repairnet.pt")
     ap.add_argument("--framegen", default="weights/framegen.pt")
