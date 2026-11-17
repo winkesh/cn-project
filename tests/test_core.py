@@ -18,7 +18,8 @@ def test_packet_roundtrip():
     for p in Packetizer().packetize(f):
         q = Packet.decode(p.encode())
         assert (q.seq, q.frame_id, q.pkt_idx, q.n_pkts, q.payload) == (p.seq, p.frame_id, p.pkt_idx, p.n_pkts, p.payload)
-        assert p.size <= 1200 + 48
+        from phantom.packet import HEADER_SIZE    # grows with the tile bitmap (720p / 1080p)
+        assert p.size <= 1200 + HEADER_SIZE
 
 
 def test_lossless_reassembly_is_exact_jpeg():

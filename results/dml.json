@@ -1,0 +1,64 @@
+{
+  "res": [
+    640,
+    360
+  ],
+  "copy_tile_db": 27.44,
+  "cpu_reference_db": 31.18,
+  "runs": {
+    "DirectML device 0 FP32": {
+      "device": 0,
+      "variant": "fp32",
+      "gpu": "NVIDIA RTX 3050",
+      "ms": 21.6,
+      "masked_psnr": 31.18,
+      "agree_db": 100.0,
+      "nvidia_util_max": 73
+    },
+    "DirectML device 0 FP16": {
+      "device": 0,
+      "variant": "fp16",
+      "gpu": "NVIDIA RTX 3050",
+      "ms": 17.9,
+      "masked_psnr": 31.18,
+      "agree_db": 77.5,
+      "nvidia_util_max": 29
+    },
+    "DirectML device 1 FP32": {
+      "device": 1,
+      "variant": "fp32",
+      "gpu": "integrated GPU (NVIDIA idle)",
+      "ms": 385.4,
+      "masked_psnr": 31.18,
+      "agree_db": 98.8,
+      "nvidia_util_max": 0
+    },
+    "DirectML device 1 FP16": {
+      "device": 1,
+      "variant": "fp16",
+      "gpu": "integrated GPU (NVIDIA idle)",
+      "ms": 388.4,
+      "masked_psnr": 31.18,
+      "agree_db": 72.4,
+      "nvidia_util_max": 0
+    },
+    "DirectML device 2 FP32": {
+      "device": 2,
+      "variant": "fp32",
+      "gpu": "integrated GPU (NVIDIA idle)",
+      "ms": 448.5,
+      "masked_psnr": 31.18,
+      "agree_db": 100.0,
+      "nvidia_util_max": 0
+    },
+    "DirectML device 2 FP16": {
+      "device": 2,
+      "variant": "fp16",
+      "gpu": "integrated GPU (NVIDIA idle)",
+      "ms": 270.0,
+      "masked_psnr": 31.18,
+      "agree_db": 80.8,
+      "nvidia_util_max": 0
+    }
+  }
+}

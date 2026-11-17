@@ -42,7 +42,8 @@ def ffmpeg_exe() -> str:
 
 
 def find_samples() -> dict[str, Path]:
-    roots = ([Path("data720/test")] if RES == 720 else []) + [Path("data/test")]
+    # the highest-resolution copy of the test clips that is not above the stream (smaller ones are upscaled)
+    roots = [Path(f"data{r}/test") for r in (1080, 720) if r <= RES] + [Path("data/test")]
     for r in roots:
         if r.exists():
             vids = sorted(p for p in r.iterdir() if p.suffix.lower() in VIDEO_EXT)
@@ -232,13 +233,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def _stream_h264(self, quality: str):
         w, h = 2 * WIDTH, HEIGHT
-        if quality == "med" and RES == 720:
+        if quality == "med" and RES >= 720:
             scale, rate = ["-vf", "scale=1920:540"], "6M"
         else:
-            scale, rate = [], ("10M" if RES == 720 else "4M")
+            scale, rate = [], {360: "4M", 720: "10M", 1080: "20M"}[RES]
+        level = "5.1" if w * h > 8192 * 256 else "4.0"     # 3840x1080 side by side needs level 5.1
         cmd = [ffmpeg_exe(), "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{w}x{h}",
                "-r", "30", "-i", "-", *scale, "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
-               "-profile:v", "high", "-level:v", "4.0", "-pix_fmt", "yuv420p", "-g", "30", "-bf", "0",
+               "-profile:v", "high", "-level:v", level, "-pix_fmt", "yuv420p", "-g", "30", "-bf", "0",
                "-b:v", rate, "-maxrate", rate, "-bufsize", "4M",
                "-f", "mp4", "-movflags", "empty_moov+default_base_moof+frag_keyframe", "-frag_duration", "100000", "-"]
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
@@ -304,8 +306,17 @@ def main():
     ap.add_argument("--framegen", default="weights/framegen.pt")
     ap.add_argument("--udp-port", type=int, default=5004,
                     help="UDP port for streams from another machine (python -m phantom.send)")
+    ap.add_argument("--backend", default="auto", choices=["auto", "torch", "trt", "dml"],
+                    help="RepairNet runtime: TensorRT engine, PyTorch, or DirectML (any DirectX 12 GPU)")
+    ap.add_argument("--res", default=str(RES), choices=["360", "720", "1080"],
+                    help="stream resolution (360p runs at 30 fps on a laptop; 720p/1080p need a stronger CPU)")
+    ap.add_argument("--repair-res", default="auto", choices=["auto", "full", "360"],
+                    help="auto: repair at 360p when full-resolution repair is too slow for this GPU")
     a = ap.parse_args()
-    ENGINE = Engine(a.weights, a.framegen, udp_port=a.udp_port)
+    ENGINE = Engine(a.weights, a.framegen, udp_port=a.udp_port, backend=a.backend, repair_res=a.repair_res)
+    rn = ENGINE.models.get("repairnet")
+    if rn is not None:
+        print(f"RepairNet runs on {rn.label}", flush=True)
     if ENGINE.rx is not None:
         print(f"listening for senders on UDP {a.udp_port}; on another machine run:  python -m phantom.send"
               f"   (or --to {ENGINE.ips[0] if ENGINE.ips else '<this IP>'})", flush=True)

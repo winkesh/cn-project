@@ -7,3 +7,7 @@ pandas
 matplotlib
 pytest
 imageio-ffmpeg   # bundled ffmpeg: H.264 streaming in the demo app and the demo video renderer
+onnx
+onnxruntime-directml   # Windows; use onnxruntime elsewhere
+onnxconverter-common
+# optional, NVIDIA GPUs: pip install tensorrt-cu12  (TensorRT engines via python -m tools.build_accel)

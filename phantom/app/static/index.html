@@ -410,8 +410,10 @@ const setting = (k, v) => api('/api/settings', {[k]: v}).then(poll).catch(e => s
 // ---------------------------------------------------------------- video transport: H.264 over MSE, MJPEG fallback
 const video = document.createElement('video');
 video.muted = true; video.playsInline = true; video.autoplay = true;
-const CODEC = 'video/mp4; codecs="avc1.640028"';
-function startStream() {
+let CODEC = 'video/mp4; codecs="avc1.640028"';           // H.264 High, level 4.0 (up to 2 x 720p)
+async function startStream() {
+  try { state = state || await api('/api/state'); } catch (e) {}
+  if (state && state.res[0] * 2 * state.res[1] > 8192 * 256) CODEC = 'video/mp4; codecs="avc1.640033"';  // 5.1
   if (window.MediaSource && MediaSource.isTypeSupported(CODEC)) startMSE(); else startMJPEG();
 }
 function startMSE() {
@@ -590,7 +592,9 @@ function sync() {
   if (!$('#model').children.length) {
     const names = {repairnet: ['RepairNet', 'No added delay'], framegen: ['Framegen', 'Waits one frame (+33 ms)'], flow: ['Optical flow', 'No added delay']};
     state.models.forEach(m => {
-      const [t, d] = names[m] || [m, ''];
+      let [t, d] = names[m] || [m, ''];
+      const info = state.model_info && state.model_info[m];
+      if (info) d += ` · ${info}`;
       const b = document.createElement('button'); b.className = 'opt'; b.dataset.v = m;
       b.innerHTML = `<span class="radio"></span><b>${t}</b><span class="d">${d}</span>`;
       b.onclick = () => setting('model', m);

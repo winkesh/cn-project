@@ -72,9 +72,21 @@ Runs on any machine with the Python environment above; a CUDA GPU makes it real 
 service is needed. Then open the address it prints in a browser.
 ```bash
 python -m phantom.app                                  # 360p, http://127.0.0.1:8000 (any laptop GPU)
-PHANTOM_RES=720 python -m phantom.app                  # 720p, needs a faster GPU for 30 fps
+python -m phantom.app --res 720                        # 720p or 1080p: needs a stronger CPU, see below
 python -m phantom.app --host 0.0.0.0 --port 8000       # also reachable from other devices on the network
 ```
+By default the app picks the fastest repair backend on the machine (`--backend auto`: a TensorRT engine if
+`python -m tools.build_accel` built one, else PyTorch, else DirectML) and repairs at 360p when the stream is
+larger. How far the resolution goes was measured on the running demo (game clip, 10 % loss, browser attached):
+
+| Machine | 360p | 720p | 1080p |
+|---|---|---|---|
+| Laptop: i5-12450HX + RTX 3050, TensorRT FP16 | 30 fps | 12-14 fps | below that |
+| Desktop: 16 cores + RTX 5060 Ti, TensorRT INT8+FP16 | 30 fps | 30 fps | 23 fps |
+
+Above 360p the limit is the CPU, not the GPU: every 720p frame is 576 JPEG tiles and packets (1080p: 1296), and
+sending, receiving and the browser's H.264 stream share one Python process. `python -m tools.res_bench` times
+each stage on a machine.
 `--host 0.0.0.0` lets a phone or another laptop on the same network open `http://<this-machine's-IP>:8000`;
 any network path between the browser and the server works (LAN, VPN, port forward).
 Upload any video or paste a stream URL (`.mp4`, HLS `.m3u8`, `rtsp://`). Each frame goes through the real
@@ -110,6 +122,52 @@ allow it (a phone hotspot is a *public* network). Both machines must use the sam
 
 Optional: `python -m phantom.live.relay` sits between the two to add delay and jitter
 (`python -m phantom.live.relay --help`); point the sender at it with `--to`.
+
+## Running RepairNet fast on consumer hardware
+The demo picks the fastest working backend on its own (`python -m phantom.app --backend auto|torch|trt|dml`):
+a TensorRT engine built for this machine, else PyTorch on CUDA, else ONNX Runtime + DirectML on any DirectX 12
+GPU (NVIDIA, AMD, Intel), else the CPU. Streams above 360p are repaired at 360p when full-resolution repair would
+not fit the frame budget (`--repair-res auto|full|360`): the network fills the lost tiles from a 360p copy and
+the upscaled result is pasted into the lost tiles only, so received pixels keep full resolution and the cost no
+longer grows with the stream resolution.
+
+```bash
+python -m tools.build_accel        # ONNX (FP32, FP16, INT8) + TensorRT engines for this GPU, then verify
+python -m tools.dml_check          # RepairNet through DirectML on every GPU in this PC
+```
+TensorRT 11 builds strongly typed networks, so precision lives in the ONNX file: an FP16 export for the FP16
+engine, and explicit INT8 quantize/dequantize nodes calibrated on real training frames for INT8
+(`phantom/accel.py`). Quantizing alone leaves every operation between the INT8 convolutions in FP32, which costs
+back what INT8 saves; converting those to FP16 (`int8fp16`) is what makes INT8 pay off. Engines only load on the
+operating system they were built on, so build them on the machine that runs the demo (on a laptop GPU,
+`--opt-level 3` built in under a minute without trouble). The build tool measures every engine and the app uses
+the fastest one that stays within 0.3 dB of PyTorch.
+
+GPU compute per frame at 360p (inputs already on the GPU):
+
+| GPU | PyTorch FP16 | TensorRT FP16 | TensorRT INT8 (+FP16) | Used |
+|---|---|---|---|---|
+| RTX 3050 laptop (Ampere) | 9.25 ms | **5.03 ms (1.84x)** | 5.71 ms (1.62x) | FP16 |
+| RTX 5060 Ti (Blackwell) | 4.49 ms | 2.58 ms (1.74x) | **1.94 ms (2.31x)** | INT8+FP16 |
+
+Repair quality and end-to-end time (frames uploaded from RAM each call), PSNR of the lost regions:
+
+| Backend | GPU | Quality | Time / frame |
+|---|---|---|---|
+| Copy last tile (baseline) | – | 26.8 dB | – |
+| PyTorch FP16 | RTX 5060 Ti | 31.4 dB | 6.0 ms |
+| TensorRT FP16 | RTX 5060 Ti | 31.4 dB (identical) | 3.2 ms |
+| TensorRT INT8+FP16 | RTX 5060 Ti | 31.2 dB | 2.8 ms |
+| PyTorch FP16 | RTX 3050 laptop | 30.7 dB | 10.6 ms |
+| TensorRT FP16 | RTX 3050 laptop | 30.7 dB (identical) | 6.6 ms |
+| DirectML FP16 | RTX 3050 laptop | identical to CPU | 17.9 ms |
+| DirectML FP32 | Intel UHD (integrated) | identical to CPU | 385 ms (105 ms at 180p) |
+
+RTX 5060 Ti rows: 64 held-out samples; laptop rows: 16 (DirectML: 6), so compare quality within a machine, not
+across. Which INT8 wins depends on the GPU: on Blackwell INT8 convolutions are ~25 % faster than FP16, on the
+Ampere laptop GPU the INT8 conversions cost more than they save. Low-res repair at 720p keeps about 75 % of the
+full-resolution gain (28.7 vs 29.8 dB in the lost regions, copy-tile 25.4 dB) for a quarter of the compute; on a
+near-static video call it gains little over copy-tile.
 
 ## Experiments
 | ID | Varies | Fixed | Question |

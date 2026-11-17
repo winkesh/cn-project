@@ -1,0 +1,44 @@
+[
+  {
+    "res": 720,
+    "size": [
+      1280,
+      720
+    ],
+    "repair": "TensorRT FP16, repairs at 360p",
+    "clips": {
+      "textured (worst case)": {
+        "send_ms": 8.2,
+        "recv_ms": 30.7,
+        "pkts": 576
+      },
+      "game clip": {
+        "send_ms": 10.4,
+        "recv_ms": 34.4,
+        "pkts": 576
+      }
+    },
+    "encode_ms": 6.9
+  },
+  {
+    "res": 1080,
+    "size": [
+      1920,
+      1080
+    ],
+    "repair": "TensorRT FP16, repairs at 360p",
+    "clips": {
+      "textured (worst case)": {
+        "send_ms": 18.4,
+        "recv_ms": 61.7,
+        "pkts": 1296
+      },
+      "game clip": {
+        "send_ms": 19.0,
+        "recv_ms": 63.8,
+        "pkts": 1296
+      }
+    },
+    "encode_ms": 12.0
+  }
+]

@@ -109,14 +109,14 @@ class NetSource:
 
 class Engine:
     def __init__(self, weights: str = "weights/repairnet.pt", framegen: str = "weights/framegen.pt",
-                 udp_port: int = 5004):
+                 udp_port: int = 5004, backend: str = "auto", repair_res: str = "auto"):
         self.settings = Settings()
         self.lock = threading.Lock()
         self.pool = ThreadPoolExecutor(8)
         self.baselines = {"none": C.NoRecovery(), "freeze": C.Freeze(), "copy": C.CopyTile()}
         self.models: dict[str, C.Concealer] = {}
         if Path(weights).exists():
-            self.models["repairnet"] = C.RepairNetConcealer(weights)
+            self.models["repairnet"] = C.make_repairnet(weights, backend, repair_res)
         if Path(framegen).exists():
             fb = self.models.get("repairnet") or C.FlowExtrapolate()
             self.models["framegen"] = C.FramegenInterp(framegen, fallback=fb)
@@ -421,6 +421,7 @@ class Engine:
         return dict(
             settings=asdict(self.settings),
             models=list(self.models), baselines=list(self.baselines),
+            model_info={k: getattr(v, "label", "") for k, v in self.models.items()},
             source=None if src is None else dict(label=src.label, kind=src.kind, size=src.size,
                                                  fps=round(src.out_fps, 1)),
             error=self.source_error, res=[WIDTH, HEIGHT], tiles=N_TILES, agg=agg,

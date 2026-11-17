@@ -1,0 +1,28 @@
+{
+  "gpu": "NVIDIA GeForce RTX 3050 6GB Laptop GPU",
+  "res": [
+    640,
+    360
+  ],
+  "copy_tile_db": 26.55,
+  "backends": {
+    "PyTorch FP16": {
+      "masked_psnr": 30.67,
+      "vs_pytorch_db": 100.0,
+      "ms": 10.59
+    },
+    "TensorRT FP16": {
+      "masked_psnr": 30.67,
+      "vs_pytorch_db": 79.5,
+      "ms": 6.64
+    },
+    "TensorRT INT8+FP16": {
+      "masked_psnr": 30.48,
+      "vs_pytorch_db": 44.3,
+      "ms": 7.33
+    }
+  },
+  "recommended": "fp16",
+  "dml_device": 0,
+  "dml_variant": "fp16"
+}
