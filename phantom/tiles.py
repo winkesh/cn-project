@@ -62,3 +62,17 @@ def tile_mask_to_pixels(missing: set[int] | np.ndarray) -> np.ndarray:
 
 def resize_frame(img: np.ndarray) -> np.ndarray:
     return cv2.resize(img, (WIDTH, HEIGHT), interpolation=cv2.INTER_AREA)
+
+
+def letterbox(img: np.ndarray) -> np.ndarray:
+    """Fit any input into WIDTHxHEIGHT without distortion (black bars), e.g. a 4:3 webcam."""
+    h, w = img.shape[:2]
+    if (w, h) == (WIDTH, HEIGHT):
+        return img
+    s = min(WIDTH / w, HEIGHT / h)
+    nw, nh = max(1, round(w * s)), max(1, round(h * s))
+    small = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_CUBIC)
+    out = np.zeros((HEIGHT, WIDTH, 3), np.uint8)
+    y, x = (HEIGHT - nh) // 2, (WIDTH - nw) // 2
+    out[y:y + nh, x:x + nw] = small
+    return out

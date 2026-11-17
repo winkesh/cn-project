@@ -85,7 +85,8 @@ class FlowExtrapolate(Concealer):
 class RepairNetConcealer(Concealer):
     name = "repairnet"
 
-    def __init__(self, weights: str | Path, device: str | None = None, half: bool = True):
+    def __init__(self, weights: str | Path, device: str | None = None, half: bool = True,
+                 work_height: int | None = None):
         import torch
         from .models.repairnet import RepairNet
 
@@ -104,6 +105,7 @@ class RepairNetConcealer(Concealer):
             self.fmt = torch.channels_last
             self.net = self.net.to(memory_format=self.fmt)
         self.times_ms: list[float] = []
+        self.work_height = work_height            # e.g. 360: repair at 360p and upscale into larger frames
 
     def _t(self, img):
         # upload uint8 BGR, convert to RGB float on the GPU (cheaper than doing it in numpy)
@@ -122,7 +124,21 @@ class RepairNetConcealer(Concealer):
         with torch.no_grad():
             m = torch.from_numpy(mask.view(np.uint8))[None, None].to(self.device)
             m = (m.half() if self.half else m.float()).contiguous(memory_format=self.fmt)
-            out = self.net(self._t(prev2), self._t(prev1), self._t(partial), m)
+            p2, p1, cur = self._t(prev2), self._t(prev1), self._t(partial)
+            h, w = cur.shape[-2:]
+            if self.work_height and h > self.work_height:
+                # Low-res repair: run the network on a downscaled copy, upscale only its prediction and paste
+                # it into the lost tiles. Cost stays at the work resolution whatever the stream resolution;
+                # received pixels keep full resolution.
+                F = torch.nn.functional
+                sh, sw = self.work_height, round(w * self.work_height / h / 8) * 8
+                small = lambda t: F.interpolate(t, size=(sh, sw), mode="area").contiguous(memory_format=self.fmt)
+                ms = (F.interpolate(m, size=(sh, sw), mode="area") > 0).to(m.dtype).contiguous(memory_format=self.fmt)
+                pred = self.net(small(p2), small(p1), small(cur), ms)
+                pred = F.interpolate(pred, size=(h, w), mode="bilinear", align_corners=False)
+                out = m * pred + (1 - m) * cur
+            else:
+                out = self.net(p2, p1, cur, m)
             out = (out[0].flip(0).float().clamp(0, 1) * 255 + 0.5).byte().permute(1, 2, 0).contiguous().cpu().numpy()
         self.times_ms.append((time.perf_counter() - t0) * 1000)   # .cpu() above already synchronised
         return out

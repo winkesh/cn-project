@@ -14,7 +14,7 @@ from ..config import FPS, FRAME_MS, N_TILES
 from ..packet import Packet
 from ..receiver import FrameState, assemble
 from ..sender import Packetizer
-from ..tiles import resize_frame, tile_mask_to_pixels
+from ..tiles import letterbox, tile_mask_to_pixels
 
 
 class FrameSource:
@@ -22,10 +22,14 @@ class FrameSource:
 
     def __init__(self, src):
         self.src = src
-        self.cap = cv2.VideoCapture(int(src) if str(src).isdigit() else str(src))
-        if not self.cap.isOpened():
-            raise RuntimeError(f"cannot open {src}")
         self.is_file = not str(src).isdigit()
+        self.cap = cv2.VideoCapture(str(src) if self.is_file else int(src))
+        if not self.cap.isOpened():
+            raise RuntimeError(f"cannot open {'video ' + str(src) if self.is_file else 'webcam ' + str(src)}")
+        if not self.is_file:          # most webcams default to 640x480; ask for 16:9 HD instead
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+            self.cap.set(cv2.CAP_PROP_FPS, 30)
 
     def read(self) -> np.ndarray:
         ok, img = self.cap.read()
@@ -34,8 +38,8 @@ class FrameSource:
             self.cap = cv2.VideoCapture(str(self.src))
             ok, img = self.cap.read()
         if not ok:
-            raise RuntimeError("source ended")
-        return resize_frame(img)
+            raise RuntimeError("source ended" if self.is_file else "webcam stopped delivering frames")
+        return letterbox(img)          # never stretch: a 4:3 camera gets side bars
 
 
 class LiveSender:
