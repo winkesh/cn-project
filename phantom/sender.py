@@ -14,11 +14,11 @@ DIR_OVERHEAD = 1  # tile-count byte
 PER_TILE_DIR = 4
 
 
-ILV_STRIDE = 37  # coprime with N_TILES=144: walking tiles with this stride visits every tile once
+ILV_STRIDE = 37  # coprime with N_TILES (144 or 576): walking tiles with this stride visits every tile once
 
 
 def scatter_order(tile_ids) -> list[int]:
-    """Tile order used for interleaving: positions k*37 mod 144, so tiles that end up in the same or in
+    """Tile order used for interleaving: positions k*37 mod N_TILES, so tiles that end up in the same or in
     consecutive packets are far apart on screen (a burst of lost packets -> scattered single holes)."""
     s = set(tile_ids)
     return [t for t in ((k * ILV_STRIDE) % N_TILES for k in range(N_TILES)) if t in s]
@@ -29,6 +29,19 @@ def layout(tile_ids, n: int, interleave: bool) -> list[list[int]]:
     order = scatter_order(tile_ids) if interleave else sorted(tile_ids)
     per = math.ceil(len(order) / n) if order else 1
     return [order[j * per:(j + 1) * per] for j in range(n)]
+
+
+def chunked_map(pool, fn_batch, items, parts: int = 8) -> list:
+    """Run fn_batch over `parts` slices of items in a thread pool; return the concatenated results.
+    One task per slice instead of per item: per-task overhead dominated at 576 tiles per frame."""
+    items = list(items)
+    if not items:
+        return []
+    k = -(-len(items) // parts)
+    out = []
+    for r in pool.map(fn_batch, [items[i:i + k] for i in range(0, len(items), k)]):
+        out.extend(r)
+    return out
 
 
 def xor_bytes(chunks: list[bytes]) -> bytes:
@@ -55,6 +68,7 @@ class Packetizer:
         self._age = [0] * N_TILES
         self.force_refresh: set[int] = set()   # tiles the receiver reported lost
         self._history: dict[int, Packet] = {}  # seq -> packet, for NACK retransmission
+        self.pool = None                       # optional ThreadPoolExecutor for tile encoding
 
     def _choose_tiles(self, tiles: list[np.ndarray]) -> tuple[list[int], list[int]]:
         if self.cr_threshold <= 0:
@@ -76,17 +90,27 @@ class Packetizer:
     def packetize(self, frame: np.ndarray, send_us: int = 0) -> list[Packet]:
         tiles = T.split(frame)
         send_ids, skip_ids = self._choose_tiles(tiles)
-        coded = {i: T.encode_tile(tiles[i], self.quality) for i in send_ids}
-        total = sum(len(b) + PER_TILE_DIR for b in coded.values())
-        n = max(1, math.ceil(total / (MAX_PAYLOAD - DIR_OVERHEAD)))
-        while True:
-            groups = layout(send_ids, n, self.interleave)
-            sizes = [DIR_OVERHEAD + sum(len(coded[i]) + PER_TILE_DIR for i in g) for g in groups]
-            if max(sizes) <= MAX_PAYLOAD or n >= 255:
+        if self.pool is not None:     # cv2 releases the GIL: encode tiles in 8 parallel batches
+            enc = lambda ids: [T.encode_tile(tiles[i], self.quality) for i in ids]
+            coded = dict(zip(send_ids, chunked_map(self.pool, enc, send_ids)))
+        else:
+            coded = {i: T.encode_tile(tiles[i], self.quality) for i in send_ids}
+        # Smallest packet count n such that splitting the (scattered or raster) tile order into n equal-count
+        # chunks keeps every packet within MAX_PAYLOAD. Prefix sums make each try O(n) instead of O(tiles):
+        # same packets as trying layout() for n = 1, 2, ... but ~100x faster at 720p (576 tiles).
+        order = scatter_order(send_ids) if self.interleave else sorted(send_ids)
+        L = len(order)
+        csum = np.concatenate([[0], np.cumsum([len(coded[i]) + PER_TILE_DIR for i in order])])
+        n = max(1, math.ceil(csum[-1] / (MAX_PAYLOAD - DIR_OVERHEAD)))
+        while L:
+            per = math.ceil(L / n)
+            starts = np.arange(0, L, per)
+            ends = np.minimum(starts + per, L)
+            if DIR_OVERHEAD + (csum[ends] - csum[starts]).max() <= MAX_PAYLOAD or n >= L:  # 1 tile/packet floor
                 break
             n += 1
-        groups = [g for g in groups if g]
-        n = len(groups)
+        groups = [order[s:e] for s, e in zip(starts, ends)] if L else [[]]   # [[]]: a frame with nothing
+        n = len(groups)                                                      # to send still carries its skip map
         skip_map = bitmap_from(skip_ids)
         ts = int(self.frame_id * CLOCK_HZ / FPS)
         pkts = []

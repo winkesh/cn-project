@@ -61,20 +61,22 @@ class Assembled:
     any_packet: bool             # False when nothing at all arrived for this frame
 
 
-def assemble(state: FrameState | None, frame_id: int, prev: np.ndarray | None) -> Assembled:
-    """Build the partial frame. Skipped (unchanged) tiles are copied from prev; lost tiles reported."""
+def assemble(state: FrameState | None, frame_id: int, prev: np.ndarray | None, pool=None) -> Assembled:
+    """Build the partial frame. Skipped (unchanged) tiles are copied from prev; lost tiles reported.
+    pool: optional ThreadPoolExecutor to JPEG-decode tiles in parallel (live app; no memoisation)."""
     base = prev.copy() if prev is not None else np.zeros((HEIGHT, WIDTH, 3), np.uint8)
     if state is None or not state.media and not state.parity:
         return Assembled(frame_id, base, set(range(N_TILES)), False)
     if state.decoded is None or len(state.media) != state._n_decoded:
         state.fec_recover()
-        state.decoded = {}
-        for payload in state.media.values():
-            for tid, data in unpack_tiles(payload):
-                if tid < N_TILES:
-                    tile = T.decode_tile(data)
-                    if tile is not None:
-                        state.decoded[tid] = tile
+        items = [(tid, data) for payload in state.media.values() for tid, data in unpack_tiles(payload)
+                 if tid < N_TILES]
+        if pool is not None:
+            from .sender import chunked_map
+            tiles = chunked_map(pool, lambda its: [T.decode_tile_raw(d) for _, d in its], items)
+        else:
+            tiles = (T.decode_tile(data) for _, data in items)
+        state.decoded = {tid: tile for (tid, _), tile in zip(items, tiles) if tile is not None}
         state._n_decoded = len(state.media)
     for tid, tile in state.decoded.items():
         T.paste(base, tid, tile)

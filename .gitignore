@@ -12,3 +12,4 @@ logs/
 weights/framegen.pt
 weights/*_v1*
 results/*_v1*
+data720/

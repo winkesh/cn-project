@@ -64,6 +64,20 @@ python -m eval.plots                                       # figures -> results/
 python -m demo.live_demo --src data/test/clip.mp4          # live side-by-side demo over real UDP
 ```
 
+### Demo app (upload a video or paste a stream URL)
+```bash
+# on the GPU box, 720p (open http://<tailscale-ip>:8000 from any machine on the tailnet)
+PHANTOM_RES=720 python -m phantom.app --host <tailscale-ip> --port 8000
+# or locally on a laptop GPU, 360p (open http://127.0.0.1:8000)
+python -m phantom.app
+```
+Upload any video or paste a stream URL (`.mp4`, HLS `.m3u8`, `rtsp://`). Each frame goes through the real
+packetizer, a lossy channel and the real receiver; the left side shows what the loss does (no repair, a normal
+decoder that drops damaged frames, or copy-last-tile), the right side shows Phantom regenerating the lost tiles
+(RepairNet, or framegen with one frame of look-ahead). Both sides lose exactly the same packets. Loss rate,
+random/bursty loss, side-by-side or wipe view are live controls. Video reaches the browser as H.264
+(fragmented MP4 over HTTP into Media Source Extensions), with an MJPEG fallback.
+
 Two-machine demo over a real network:
 ```bash
 # machine B (receiver):  python -m demo.receiver_view --port 5004

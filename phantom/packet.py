@@ -4,15 +4,15 @@ Layout
 ------
  RTP fixed header (12 B): V=2,P=0,X=1,CC=0 | M | PT | seq | timestamp | SSRC
  Extension header (4 B):  0xBEDE profile | length in 32-bit words
- Extension body (32 B):
+ Extension body (32 B at 360p, 88 B at 720p):
      frame_id   u32   unambiguous frame key
-     pkt_idx    u8    index of this packet within the frame
-     n_pkts     u8    media packets in this frame
+     pkt_idx    u16   index of this packet within the frame
+     n_pkts     u16   media packets in this frame (720p frames need > 255)
      flags      u8    see FLAG_*
      fec_k      u8    FEC group size (0 = no FEC)
      send_us    u32   sender clock in microseconds (one-way delay measurement)
-     skip_map   18 B  144-bit bitmap: tiles intentionally not sent (unchanged)
-     pad        2 B
+     skip_map   N_TILES bits: tiles intentionally not sent (unchanged)  [18 B at 360p, 72 B at 720p]
+     pad        to a 32-bit boundary
  Payload: tile directory (n u8, then n x [tile_id u16, len u16]) + JPEG bytes
           or, for parity packets, the XOR of the group's padded payloads.
 """
@@ -30,11 +30,11 @@ FLAG_KEY = 0x08
 
 _RTP = struct.Struct("!BBHII")
 _EXT_HDR = struct.Struct("!HH")
-_EXT = struct.Struct("!IBBBBI18s2x")
+SKIP_BYTES = (N_TILES + 7) // 8
+_PAD = (-(14 + SKIP_BYTES)) % 4
+_EXT = struct.Struct(f"!IHHBBI{SKIP_BYTES}s{_PAD}x")
 EXT_WORDS = _EXT.size // 4
 HEADER_SIZE = _RTP.size + _EXT_HDR.size + _EXT.size
-SKIP_BYTES = 18
-assert N_TILES <= SKIP_BYTES * 8
 
 
 @dataclass

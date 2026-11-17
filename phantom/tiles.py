@@ -27,12 +27,18 @@ def encode_tile(tile: np.ndarray, quality: int) -> bytes:
     return buf.tobytes()
 
 
-@lru_cache(maxsize=60000)
-def _decode_cached(data: bytes) -> np.ndarray | None:
+def decode_tile_raw(data: bytes) -> np.ndarray | None:
     img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
     if img is None or img.shape != (TILE, TILE, 3):
         return None
-    img.setflags(write=False)
+    return img
+
+
+@lru_cache(maxsize=60000)
+def _decode_cached(data: bytes) -> np.ndarray | None:
+    img = decode_tile_raw(data)
+    if img is not None:
+        img.setflags(write=False)
     return img
 
 

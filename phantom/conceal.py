@@ -22,6 +22,16 @@ class Concealer:
         raise NotImplementedError
 
 
+class NoRecovery(Concealer):
+    """Nothing repairs the picture: lost tiles are shown black."""
+    name = "none"
+
+    def __call__(self, partial, mask, history):
+        out = partial.copy()
+        out[mask] = 0
+        return out
+
+
 class Freeze(Concealer):
     """What a standard decoder does with a corrupt frame: keep showing the last good one."""
     name = "freeze"
@@ -88,12 +98,19 @@ class RepairNetConcealer(Concealer):
         self.net.eval().to(self.device)
         if self.half:
             self.net.half()
+        self.fmt = torch.contiguous_format
+        if self.device == "cuda":               # channels-last + cuDNN autotune: ~25 % faster on RTX GPUs
+            torch.backends.cudnn.benchmark = True
+            self.fmt = torch.channels_last
+            self.net = self.net.to(memory_format=self.fmt)
         self.times_ms: list[float] = []
 
     def _t(self, img):
-        t = self.torch.from_numpy(img[..., ::-1].copy()).permute(2, 0, 1)[None].to(self.device)
+        # upload uint8 BGR, convert to RGB float on the GPU (cheaper than doing it in numpy)
+        t = self.torch.from_numpy(np.ascontiguousarray(img)).to(self.device, non_blocking=True)
+        t = t.permute(2, 0, 1).flip(0)[None]
         t = t.half() if self.half else t.float()
-        return t / 255.0
+        return (t / 255.0).contiguous(memory_format=self.fmt)
 
     def __call__(self, partial, mask, history):
         if not mask.any():
@@ -103,14 +120,12 @@ class RepairNetConcealer(Concealer):
         prev2 = history[-2] if len(history) > 1 else prev1
         t0 = time.perf_counter()
         with torch.no_grad():
-            m = torch.from_numpy(mask.astype(np.float32))[None, None].to(self.device)
-            m = m.half() if self.half else m
+            m = torch.from_numpy(mask.view(np.uint8))[None, None].to(self.device)
+            m = (m.half() if self.half else m.float()).contiguous(memory_format=self.fmt)
             out = self.net(self._t(prev2), self._t(prev1), self._t(partial), m)
-            out = (out[0].float().clamp(0, 1) * 255 + 0.5).byte().permute(1, 2, 0).cpu().numpy()[..., ::-1]
-        if self.device == "cuda":
-            torch.cuda.synchronize()
-        self.times_ms.append((time.perf_counter() - t0) * 1000)
-        return np.ascontiguousarray(out)
+            out = (out[0].flip(0).float().clamp(0, 1) * 255 + 0.5).byte().permute(1, 2, 0).contiguous().cpu().numpy()
+        self.times_ms.append((time.perf_counter() - t0) * 1000)   # .cpu() above already synchronised
+        return out
 
 
 class FramegenInterp(Concealer):
@@ -163,6 +178,8 @@ class FramegenInterp(Concealer):
 
 
 def make(name: str, weights: str | None = None, framegen_weights: str = "weights/framegen.pt") -> Concealer:
+    if name == "none":
+        return NoRecovery()
     if name == "freeze":
         return Freeze()
     if name == "copy":

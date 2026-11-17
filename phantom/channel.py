@@ -55,7 +55,38 @@ class GilbertElliott(LossModel):
         return GilbertElliott(p, r, rng)
 
 
-def make_loss(kind: str, loss: float, burst: float, seed: int) -> LossModel:
+class ScheduledLoss(LossModel):
+    """Loss rate that changes over time (piecewise linear through (t_ms, loss) points). Used by the
+    demo video to ramp loss on screen. Link.send() sets .now before every draw."""
+
+    def __init__(self, points, kind: str, burst: float, rng: random.Random):
+        self.points = sorted(points)
+        self.kind, self.burst, self.rng = kind, burst, rng
+        self.now = 0.0
+        self.ge = GilbertElliott(0.0, 1.0 / burst, rng)
+
+    def rate(self, t: float) -> float:
+        p = self.points
+        if t <= p[0][0]:
+            return p[0][1]
+        for (t0, l0), (t1, l1) in zip(p, p[1:]):
+            if t <= t1:
+                return l0 + (l1 - l0) * (t - t0) / max(1e-9, t1 - t0)
+        return p[-1][1]
+
+    def lost(self) -> bool:
+        L = self.rate(self.now)
+        if L <= 0:
+            return False
+        if self.kind == "bernoulli":
+            return self.rng.random() < L
+        self.ge.p = L * self.ge.r / max(1e-9, 1 - L)
+        return self.ge.lost()
+
+
+def make_loss(kind: str, loss: float, burst: float, seed: int, schedule=None) -> LossModel:
+    if schedule:
+        return ScheduledLoss(schedule, kind, burst, random.Random(seed))
     rng = random.Random(seed)
     if loss <= 0:
         return NoLoss()
@@ -87,6 +118,8 @@ class Link:
             start = max(t_ms, self._busy_until)
             self._busy_until = start + size_bytes * 8 / (self.rate_mbps * 1000.0)
             t_ms = self._busy_until
+        if isinstance(self.loss, ScheduledLoss):
+            self.loss.now = t_ms
         if self.loss.lost():
             return None
         j = self._rng.uniform(-self.jitter_ms, self.jitter_ms) if self.jitter_ms else 0.0

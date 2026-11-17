@@ -26,6 +26,7 @@ from phantom import metrics as M  # noqa: E402
 from phantom.live.endpoints import LiveReceiver, LiveSender  # noqa: E402
 from phantom.live.relay import Relay  # noqa: E402
 from phantom.receiver import assemble  # noqa: E402
+from phantom.config import N_TILES  # noqa: E402
 from phantom.tiles import tile_mask_to_pixels  # noqa: E402
 from phantom.video import load_video  # noqa: E402
 
@@ -95,6 +96,16 @@ class SenderView:
         self.s["stop"].set()
 
 
+class NoRecovery(C.Concealer):
+    """Nothing repairs the picture: lost tiles stay black (unchanged tiles still come from the last frame)."""
+    name = "no recovery"
+
+    def __call__(self, partial, mask, history):
+        out = partial.copy()
+        out[mask] = 0
+        return out
+
+
 class RefFrames:
     def __init__(self, frames):
         self.frames = frames
@@ -112,6 +123,8 @@ def main():
     ap.add_argument("--delay", type=float, default=10.0)
     ap.add_argument("--deadline", type=float, default=100.0)
     ap.add_argument("--no-cr", action="store_true", help="disable conditional replenishment")
+    ap.add_argument("--layout", type=int, default=3, choices=[3, 4],
+                    help="3: original | without Phantom | with Phantom;  4: adds 'what arrived' + overlays")
     args = ap.parse_args()
 
     # sender + lossy relay run in their own process (separate GIL, like a separate machine)
@@ -126,7 +139,7 @@ def main():
     ref = load_video(args.src) if not str(args.src).isdigit() else []
     originals = RefFrames(ref)
 
-    baselines = [C.Freeze(), C.CopyTile(), C.FlowExtrapolate()]
+    baselines = [NoRecovery(), C.Freeze(), C.CopyTile(), C.FlowExtrapolate()]
     bi = 0
     modes = []  # (concealer, panel name, extra latency in frames)
     if Path(args.weights).exists():
@@ -142,12 +155,14 @@ def main():
 
     hist_b, hist_p = [], []
     ps_b, ps_p = deque(maxlen=60), deque(maxlen=60)
-    overlay = True
+    overlay = args.layout == 4
     t_rate, b_rate = time.perf_counter(), 0
     mbps = 0.0
     win = "Phantom Frames"
+    t_start, n_shown = time.perf_counter(), 0
+    print("Phantom Frames demo starting: models loaded, waiting for the first frame...", flush=True)
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(win, 1280, 760)
+    cv2.resizeWindow(win, *((1500, 330) if args.layout == 3 else (1280, 760)))
 
     while True:
         pending.extend(rx.poll())
@@ -163,7 +178,7 @@ def main():
                 out_p = a_p.image
             elif look and pending:
                 nxt = assemble(pending[0][1], pending[0][0], a_p.image)
-                out_p = phantom(a_p.image, mask, hist_p, nxt=nxt.image, nxt_missing_frac=len(nxt.missing) / 144)
+                out_p = phantom(a_p.image, mask, hist_p, nxt=nxt.image, nxt_missing_frac=len(nxt.missing) / N_TILES)
             else:
                 out_p = phantom(a_p.image, mask, hist_p)
             for h, o in ((hist_b, out_b), (hist_p, out_p)):
@@ -182,14 +197,20 @@ def main():
             if overlay and mask.any():
                 edge = mask & ~cv2.erode(mask.astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
                 show_p[edge] = (0, 255, 255)
-            lost_pct = 100 * len(a_p.missing) / 144
+            lost_pct = 100 * len(a_p.missing) / N_TILES
             infer = np.mean(phantom.times_ms[-30:]) if getattr(phantom, "times_ms", None) else 0
-            top = np.hstack([label(orig, "Original (sender)"),
-                             label(arrived, f"What arrived: {lost_pct:.0f}% of tiles lost")])
-            bot = np.hstack([label(out_b, f"Baseline: {baselines[bi].name}",
-                                   f"PSNR {np.mean(ps_b):.1f} dB"),
-                             label(show_p, pname, f"PSNR {np.mean(ps_p):.1f} dB   infer {infer:.1f} ms")])
-            grid = np.vstack([top, bot])
+            psb = f"PSNR {np.mean(ps_b):.1f} dB" if ps_b else None
+            psp = f"PSNR {np.mean(ps_p):.1f} dB   infer {infer:.1f} ms" if ps_p else None
+            if args.layout == 3:
+                grid = np.hstack([label(orig, "Original"),
+                                  label(out_b, f"Without Phantom ({baselines[bi].name})", psb),
+                                  label(show_p, f"With {pname}", psp)])
+            else:
+                top = np.hstack([label(orig, "Original (sender)"),
+                                 label(arrived, f"What arrived: {lost_pct:.0f}% of tiles lost")])
+                bot = np.hstack([label(out_b, f"Baseline: {baselines[bi].name}", psb),
+                                 label(show_p, pname, psp)])
+                grid = np.vstack([top, bot])
             now = time.perf_counter()
             if now - t_rate > 1:
                 mbps = (tx.bytes_sent - b_rate) * 8 / (now - t_rate) / 1e6
@@ -201,9 +222,25 @@ def main():
                    f"[+/-] loss [b] burst [c] baseline [m] mode [o] overlay [q] quit")
             cv2.putText(bar, txt, (8, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
             cv2.imshow(win, np.vstack([grid, bar]))
+            n_shown += 1
+            if n_shown == 1:
+                print("first frame shown", flush=True)
         k = cv2.waitKey(1) & 0xFF
-        if k == ord("q") or cv2.getWindowProperty(win, cv2.WND_PROP_VISIBLE) < 1:
+        # only treat "window not visible" as closed once something has been drawn (on Windows a fresh
+        # window reports not-visible until the first imshow)
+        if k == ord("q"):
+            print("quit: q pressed")
             break
+        # WND_PROP_VISIBLE flickers to 0 on Windows when the window loses focus or is covered;
+        # AUTOSIZE returns -1 only once the window has really been destroyed (closed with the X)
+        if n_shown:
+            try:
+                closed = cv2.getWindowProperty(win, cv2.WND_PROP_AUTOSIZE) < 0
+            except cv2.error:            # Windows raises "NULL window" once it has been closed
+                closed = True
+            if closed:
+                print("quit: window closed")
+                break
         if k in (ord("+"), ord("=")):
             relay.set_loss(relay.loss + 0.05)
         elif k in (ord("-"), ord("_")):
@@ -216,6 +253,7 @@ def main():
             mi = (mi + 1) % len(modes)
         elif k == ord("o"):
             overlay = not overlay
+    print(f"demo ended after {time.perf_counter() - t_start:.0f} s, {n_shown} frames shown")
     tx.stop(); relay.stop()
     cv2.destroyAllWindows()
 

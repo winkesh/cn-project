@@ -37,6 +37,7 @@ class NetConfig:
     jitter_ms: float = 2.0
     rate_mbps: float = 0.0
     seed: int = 0
+    schedule: tuple | None = None   # ((t_ms, loss), ...): time-varying loss, overrides `loss`
 
     @property
     def rtt(self) -> float:
@@ -78,7 +79,7 @@ def simulate(frames, scheme: SchemeConfig, net: NetConfig, concealer=None, keep_
     concealer = concealer or CopyTile()
     pk, per_frame = _encode_all(frames, scheme, net.seed)
     link = Link(delay_ms=net.delay_ms, jitter_ms=net.jitter_ms, rate_mbps=net.rate_mbps,
-                loss=make_loss(net.loss_model, net.loss, net.burst, net.seed), seed=net.seed)
+                loss=make_loss(net.loss_model, net.loss, net.burst, net.seed, net.schedule), seed=net.seed)
     by_g = {p.meta["g"]: (f, p) for f, pk_list in enumerate(per_frame) for p in pk_list}
     media_bytes = sum(p.size for pl in per_frame for p in pl if not p.flags & FLAG_PARITY)
 
@@ -186,7 +187,10 @@ def simulate(frames, scheme: SchemeConfig, net: NetConfig, concealer=None, keep_
             if keep_outputs:
                 outputs.append(out)
 
-    return _summarise(rows, scheme, net, media_bytes, sent_bytes, retx_bytes, len(frames), concealer), outputs
+    summary = _summarise(rows, scheme, net, media_bytes, sent_bytes, retx_bytes, len(frames), concealer)
+    if keep_outputs:
+        summary["per_frame"] = rows   # per-frame stats for the demo video overlays
+    return summary, outputs
 
 
 def _simulate_tcp(frames, per_frame, link, net, scheme, media_bytes, keep_outputs, compute_ssim):

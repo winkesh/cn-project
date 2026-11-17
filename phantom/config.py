@@ -1,9 +1,14 @@
-"""Shared constants for Phantom Frames."""
+"""Shared constants for Phantom Frames.
+
+Resolution is chosen with the PHANTOM_RES environment variable: 360 (default, 640x360, 144 tiles,
+what the live demo and the evaluation use) or 720 (1280x720, 576 tiles, used to render the demo video).
+"""
+import os
 from dataclasses import dataclass
 
-WIDTH = 640
-HEIGHT = 360
-TILE = 40                      # 16 x 9 = 144 tiles at 640x360
+RES = int(os.environ.get("PHANTOM_RES", "360"))
+WIDTH, HEIGHT = {360: (640, 360), 720: (1280, 720)}[RES]
+TILE = 40                      # 16 x 9 = 144 tiles at 640x360, 32 x 18 = 576 at 1280x720
 TILES_X = WIDTH // TILE
 TILES_Y = HEIGHT // TILE
 N_TILES = TILES_X * TILES_Y
