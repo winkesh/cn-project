@@ -158,9 +158,11 @@ class LiveReceiver:
         self.cap_us: dict[int, int] = {}   # frame_id -> sender capture time (us)
         self.us0 = 0
         self.ssrc = None                     # current stream; a new SSRC (sender restarted) resets playout
-        self.loss_model = None               # optional: simulate packet loss on arrival (phantom.receive)
+        self.loss_model = None               # optional: simulate packet loss on arrival (web app, network streams)
         self.sim_dropped = 0
         self.arrived = 0
+        self.last_rx = 0.0                   # time.time() of the last media packet of the current stream
+        self.ignored = 0                     # packets from a second sender while the first was live
 
     def _new_stream(self):
         self.states.clear()
@@ -200,14 +202,19 @@ class LiveReceiver:
                 except Exception:          # wrong format: most often the sender runs another PHANTOM_RES
                     self.bad += 1
                     continue
+                t_now = time.time()
+                if p.ssrc != self.ssrc:
+                    if self.ssrc is not None and t_now - self.last_rx < 1.0:
+                        self.ignored += 1      # another sender while the current one is live: stay locked on
+                        continue
+                    self.ssrc = p.ssrc         # first packet, or the sender restarted / was replaced
+                    self._new_stream()
                 self.arrived += 1
+                self.last_rx = t_now
                 if self.loss_model is not None and self.loss_model.lost():
                     self.sim_dropped += 1      # simulated loss on arrival: as if the network had dropped it
                     self.peer = addr
                     continue
-                if p.ssrc != self.ssrc:        # first packet, or the sender restarted: start a new stream
-                    self.ssrc = p.ssrc
-                    self._new_stream()
                 now = time.perf_counter()
                 self.peer = addr
                 if self.t0 is None:

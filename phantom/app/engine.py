@@ -3,6 +3,9 @@
 source (file / URL / webcam) -> frames -> real Packetizer (RTP packets, interleaved JPEG tiles)
   -> lossy channel (same Bernoulli / Gilbert-Elliott models as the UDP relay)
   -> real receiver (FrameState + assemble)
+or: another machine running `python -m phantom.send` -> real UDP packets on port 5004 -> loss simulated on
+    arrival -> the same receiver path (the app answers the sender's discovery broadcast and switches to
+    the network stream when one starts)
   -> left:  what the loss does (no repair | normal decoder freeze | copy last tile)
      right: Phantom regenerating the lost tiles (RepairNet, or framegen with one frame of look-ahead)
   -> composite [left | right] published to the video streams + per-frame stats.
@@ -23,6 +26,8 @@ import numpy as np
 from .. import conceal as C
 from ..channel import make_loss
 from ..config import FPS, HEIGHT, N_TILES, WIDTH
+from ..live.endpoints import LiveReceiver, local_ips
+from ..packet import HEADER_SIZE
 from ..receiver import FrameState, assemble
 from ..sender import Packetizer
 from ..tiles import tile_mask_to_pixels
@@ -90,8 +95,21 @@ class Source:
         self.cap.release()
 
 
+class NetSource:
+    """A stream arriving over UDP from `python -m phantom.send` on another machine."""
+    kind, n, out_fps = "network", 0, float(FPS)
+
+    def __init__(self, peer_ip: str):
+        self.label = f"Live from {peer_ip}"
+        self.size = (WIDTH, HEIGHT)
+
+    def close(self):
+        pass
+
+
 class Engine:
-    def __init__(self, weights: str = "weights/repairnet.pt", framegen: str = "weights/framegen.pt"):
+    def __init__(self, weights: str = "weights/repairnet.pt", framegen: str = "weights/framegen.pt",
+                 udp_port: int = 5004):
         self.settings = Settings()
         self.lock = threading.Lock()
         self.pool = ThreadPoolExecutor(8)
@@ -114,11 +132,21 @@ class Engine:
         self.stats: deque = deque(maxlen=300)
         self._gen = 0                               # bumps on every source change
         self._reset_pipeline()
-        # three stages run concurrently, like a real sender and receiver: decode source | packetize + channel |
-        # receive + repair + compose
+        # receiving from another machine: always listening, answers discovery broadcasts
+        self.udp_port, self.net_error, self.rx = udp_port, "", None
+        self._net_ssrc, self._net_key, self._avg_pkts = None, None, 0.0
+        self.ips = local_ips()
+        try:
+            self.rx = LiveReceiver(udp_port, deadline_ms=150)
+        except OSError as e:
+            self.net_error = f"cannot listen on UDP {udp_port}: {e}"
+        # stages run concurrently, like a real sender and receiver: decode source | packetize + channel |
+        # receive + repair + compose; plus the UDP listener for streams from another machine
         threading.Thread(target=self._reader, daemon=True).start()
         threading.Thread(target=self._sender, daemon=True).start()
         threading.Thread(target=self._worker, daemon=True).start()
+        if self.rx is not None:
+            threading.Thread(target=self._net_loop, daemon=True).start()
 
     # ------------------------------------------------------------------ control
     def update(self, **kw):
@@ -138,7 +166,7 @@ class Engine:
         return asdict(self.settings)
 
     def set_source(self, spec: str, kind: str, label: str):
-        src = Source(spec, kind, label)             # raises IOError with a readable message
+        src = Source(spec, kind, label) if kind != "network" else NetSource(spec)   # IOError if unopenable
         with self.lock:
             old, self.source = self.source, src
             self._gen += 1
@@ -152,7 +180,7 @@ class Engine:
                     break
         if old:
             old.close()
-        return {"label": label, "kind": kind, "size": src.size, "fps": round(src.out_fps, 1),
+        return {"label": src.label, "kind": src.kind, "size": src.size, "fps": round(src.out_fps, 1),
                 "frames": src.n}
 
     def subscribe(self) -> queue.Queue:
@@ -178,7 +206,7 @@ class Engine:
     def _reader(self):
         while True:
             src = self.source
-            if src is None or self.settings.paused:
+            if src is None or src.kind == "network" or self.settings.paused:
                 time.sleep(0.05)
                 continue
             gen = self._gen
@@ -231,6 +259,44 @@ class Engine:
             except Exception as e:
                 self.source_error = f"receiver error: {e!r}"
                 time.sleep(0.1)
+
+    def _net_loop(self):
+        """Receive real UDP packets from another machine and feed them into the receiver stage."""
+        rx = self.rx
+        while True:
+            src = self.source
+            on = src is not None and src.kind == "network"
+            s = self.settings
+            key = (s.loss, s.burst) if on else None
+            if key != self._net_key:                  # the loss slider acts on arrival for network streams
+                rx.loss_model = (make_loss("ge" if s.burst > 1.01 else "bernoulli", s.loss, s.burst,
+                                           seed=int(time.time())) if on else None)
+                self._net_key = key
+            frames = rx.poll()
+            if rx.ssrc is not None and rx.ssrc != self._net_ssrc and rx.peer:
+                self._net_ssrc = rx.ssrc              # a sender just started: show its stream
+                try:
+                    self.set_source(rx.peer[0], "network", "")
+                except Exception as e:
+                    self.net_error = repr(e)
+                continue
+            if not on or s.paused:
+                continue
+            gen = self._gen
+            for fid, st in frames:
+                n = st.n_pkts if st else 0
+                if n:
+                    self._avg_pkts = 0.9 * self._avg_pkts + 0.1 * n if self._avg_pkts else n
+                else:                                 # nothing at all arrived for this frame
+                    n = round(self._avg_pkts)
+                got = len(st.media) if st else 0
+                nbytes = sum(len(p) + HEADER_SIZE for p in st.media.values()) if st else 0
+                cur = dict(fid=fid, orig=None, st=st, pkts=n, lost=max(0, n - got), bytes=nbytes,
+                           t0=time.perf_counter(), net=True)
+                try:
+                    self.net_q.put_nowait((gen, cur))
+                except queue.Full:                    # receiver stage behind: drop rather than lag
+                    pass
 
     def _channel(self, s: Settings):
         key = (s.loss, s.burst)
@@ -286,6 +352,8 @@ class Engine:
         a_b = assemble(st, f["fid"], self.hist_b[-1] if self.hist_b else None, pool=self.pool)
         a_p = assemble(st, f["fid"], self.hist_p[-1] if self.hist_p else None, pool=self.pool)
         miss = a_p.missing
+        if f.get("net"):
+            self.rx.report_missing(miss)              # loss-aware refresh feedback to the remote sender
         mask = tile_mask_to_pixels(miss)
         out_b = self.baselines[s.baseline](a_b.image, mask, self.hist_b) if miss else a_b.image
         model = self.models[s.model]
@@ -302,8 +370,9 @@ class Engine:
             h.append(o)
             if len(h) > 3:
                 h.pop(0)
-        left = orig if s.left == "original" else out_b
-        if s.outline and miss and s.left != "original":
+        show_orig = s.left == "original" and orig is not None   # a live network stream has no original
+        left = orig if show_orig else out_b
+        if s.outline and miss and not show_orig:
             left = left.copy()
             edge = mask & ~cv2.erode(mask.view(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
             left[edge] = (60, 60, 230)
@@ -318,7 +387,9 @@ class Engine:
             q.put_nowait(comp)
         self.stats.append(dict(
             t=time.time(), fid=f["fid"], pkts=f["pkts"], lost=f["lost"], bytes=f["bytes"],
-            tiles_lost=len(miss), psnr_b=min(60.0, cv2.PSNR(out_b, orig)), psnr_p=min(60.0, cv2.PSNR(out_p, orig)),
+            tiles_lost=len(miss),
+            psnr_b=None if orig is None else min(60.0, cv2.PSNR(out_b, orig)),
+            psnr_p=None if orig is None else min(60.0, cv2.PSNR(out_p, orig)),
             infer_ms=infer, proc_ms=(time.perf_counter() - f["t0"]) * 1000))
 
     # ------------------------------------------------------------------ stats
@@ -331,25 +402,32 @@ class Engine:
             sent = sum(r["pkts"] for r in win)
             dur = max(1e-3, win[-1]["t"] - win[0]["t"]) if len(win) > 1 else 1.0
             withloss = [r["infer_ms"] for r in win if r["tiles_lost"]]
+            pb = [r["psnr_b"] for r in win if r["psnr_b"] is not None]
+            pp = [r["psnr_p"] for r in win if r["psnr_p"] is not None]
             agg = dict(
                 measured_loss=sum(r["lost"] for r in win) / max(1, sent),
                 pkts_per_frame=sent / len(win),
                 tiles_lost=win[-1]["tiles_lost"],
                 tiles_lost_avg=float(np.mean([r["tiles_lost"] for r in win])),
-                psnr_b=float(np.mean([r["psnr_b"] for r in win])),
-                psnr_p=float(np.mean([r["psnr_p"] for r in win])),
+                psnr_b=float(np.mean(pb)) if pb else None,      # None: live stream, no original to compare
+                psnr_p=float(np.mean(pp)) if pp else None,
                 infer_ms=float(np.median(withloss)) if withloss else 0.0,
                 fps=(len(recent) - 1) / max(1e-3, recent[-1]["t"] - recent[0]["t"]) if len(recent) > 2 else 0.0,
                 mbps=sum(r["bytes"] for r in win) * 8 / dur / 1e6 if len(win) > 1 else 0.0,
             )
         src = self.source
+        rx = self.rx
+        hist = [r for r in st[-240:] if r["psnr_p"] is not None]
         return dict(
             settings=asdict(self.settings),
             models=list(self.models), baselines=list(self.baselines),
             source=None if src is None else dict(label=src.label, kind=src.kind, size=src.size,
                                                  fps=round(src.out_fps, 1)),
             error=self.source_error, res=[WIDTH, HEIGHT], tiles=N_TILES, agg=agg,
-            hist_b=[round(r["psnr_b"], 2) for r in st[-240:]],
-            hist_p=[round(r["psnr_p"], 2) for r in st[-240:]],
+            hist_b=[round(r["psnr_b"], 2) for r in hist],
+            hist_p=[round(r["psnr_p"], 2) for r in hist],
             hist_loss=[round(r["tiles_lost"] / N_TILES, 3) for r in st[-240:]],
+            net=dict(listening=rx is not None, port=self.udp_port, ips=self.ips, error=self.net_error,
+                     sender=rx.peer[0] if rx is not None and rx.peer else None,
+                     active=rx is not None and time.time() - rx.last_rx < 2.0),
         )

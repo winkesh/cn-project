@@ -4,7 +4,7 @@
     python -m phantom.send --src clip.mp4     # a video file (loops)
     python -m phantom.send --to 192.168.1.42  # skip discovery: send straight to that receiver
 
-Run python -m phantom.receive on the other machine first.
+Start the web demo on the receiving machine first (python -m phantom.app); it listens for senders.
 """
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ def main():
         print("Looking for a receiver on this network...", flush=True)
         ip = discover(a.port)
         if ip is None:
-            sys.exit("No receiver found. Start  python -m phantom.receive  on the other machine, or give its "
+            sys.exit("No receiver found. Start the web demo (python -m phantom.app) on the receiving machine, or give its "
                      "address:  python -m phantom.send --to <receiver-ip>  (it prints its IP when it starts).")
         dst = (ip, a.port)
         print(f"Found receiver at {ip}", flush=True)

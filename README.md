@@ -64,7 +64,7 @@ python -m pytest -q tests                                  # correctness tests
 python -m train.train_repairnet --minutes 40               # train RepairNet -> weights/repairnet.pt
 python -m eval.run_matrix --frames 300                     # all experiments -> results/results.csv
 python -m eval.plots                                       # figures -> results/figs/
-python -m demo.live_demo --src data/test/clip.mp4          # live side-by-side demo over real UDP
+python -m phantom.app                                      # the demo (web page), see below
 ```
 
 ### Demo app (upload a video or paste a stream URL)
@@ -84,41 +84,32 @@ decoder that drops damaged frames, or copy-last-tile), the right side shows Phan
 random/bursty loss, side-by-side or wipe view are live controls. Video reaches the browser as H.264
 (fragmented MP4 over HTTP into Media Source Extensions), with an MJPEG fallback.
 
-### Two-machine demo over a real network
-One machine sends, the other receives and repairs. Both on the same Wi-Fi or hotspot, both with the repo
-installed (see Setup; `weights/repairnet.pt` is in the repo), commands run from the project folder.
+### Streaming from another machine
+The demo app is also the receiver: it listens on UDP port 5004 and shows a stream sent from another machine
+on the same Wi-Fi or hotspot, in the same page and with the same controls.
 
-**Receiver machine** (ideally the one with an NVIDIA GPU), start it first:
-```bash
-python -m phantom.receive
-```
-**Sender machine** (streams its webcam; finds the receiver on the network by itself):
-```bash
-python -m phantom.send
-```
+1. **Receiving machine** (ideally the one with an NVIDIA GPU): start the demo and open it in the browser.
+   ```bash
+   python -m phantom.app
+   ```
+2. **Sending machine** (the repo installed too): stream its webcam. It finds the receiver by itself.
+   ```bash
+   python -m phantom.send
+   ```
 
-That is all. The receiver window shows the same packets twice: left without Phantom, right with Phantom.
-Packet loss (10 % to start) is simulated as packets arrive at the receiver, on top of anything the real
-network loses; the sender prints the loss the receiver reports back.
+The page switches to *Live from &lt;sender's IP&gt;* as soon as packets arrive: left without Phantom, right with
+Phantom, from the same real UDP packets. The loss slider and the random/bursty switch drop packets as they
+arrive, on top of anything the real network loses, and the sender prints the loss the receiver reports back.
+A live stream has no original to compare against, so the PSNR cards show a dash. Pick a sample to leave the
+live stream; *Watch* under the samples goes back to it.
 
-| Receiver key | Does |
-|---|---|
-| `+` / `-` | packet loss up / down 5 % |
-| `b` | random or bursty loss |
-| `c` | left side: no repair, normal decoder (freeze), copy last tile |
-| `a` | outline the lost tiles |
-| `f` / `q` | full screen / quit |
+`python -m phantom.send --src video.mp4` streams a file instead of the webcam. If the sender says
+*No receiver found* (some networks block broadcasts), give the address the demo printed when it started:
+`python -m phantom.send --to 192.168.1.42`. The first time, Windows asks whether Python may use the network:
+allow it (a phone hotspot is a *public* network). Both machines must use the same `PHANTOM_RES` (default 360p).
 
-Options: `python -m phantom.send --src video.mp4` streams a file instead of the webcam;
-`python -m phantom.receive --model flow` for a receiver without a GPU; `--loss 0.2` sets the starting loss.
-
-If the sender says *No receiver found*: some networks block broadcasts, so pass the address the receiver
-printed when it started: `python -m phantom.send --to 192.168.1.42`. The first time, Windows asks whether
-Python may use the network; allow it (on a phone hotspot that is a *public* network). Both machines must use
-the same `PHANTOM_RES` (default 360p).
-
-Advanced: `phantom.live.relay` + `phantom.live.sender` + `demo.receiver_view` put the loss in a separate
-relay process instead, with extra delay and jitter options (`python -m phantom.live.relay --help`).
+Optional: `python -m phantom.live.relay` sits between the two to add delay and jitter
+(`python -m phantom.live.relay --help`); point the sender at it with `--to`.
 
 ## Experiments
 | ID | Varies | Fixed | Question |
@@ -136,12 +127,14 @@ phantom/        core library
   sender.py     packetizer, interleaving, XOR FEC, retransmission buffer
   receiver.py   reassembly, FEC recovery, missing-tile detection
   channel.py    loss models (Bernoulli, Gilbert-Elliott), link with delay/jitter/bottleneck
-  conceal.py    freeze / copy / inpaint / flow / RepairNet
+  conceal.py    freeze / copy / inpaint / flow / RepairNet / framegen
   sim.py        discrete-event simulator (none / nack / fec / tcp)
-  models/       RepairNet
-  live/         real UDP sender, receiver, lossy relay
+  models/       RepairNet, framegen network
+  live/         real UDP sender and receiver (discovery, playout, feedback), lossy relay
+  app/          the demo: web server, streaming engine, page (also the receiver for other machines)
+  send.py       python -m phantom.send: stream a webcam or file to the demo on another machine
 train/          RepairNet training
 eval/           experiment runner and plots
-demo/           live demo
+tools/          clip download/preparation, demo video renderer
 tests/          unit tests
 ```

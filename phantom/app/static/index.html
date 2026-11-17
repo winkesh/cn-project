@@ -90,8 +90,19 @@
   .demo-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 32px; align-items: end; margin-bottom: 28px; }
   .source { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; margin-bottom: 18px; }
   .urlrow { display: flex; gap: 12px; }
-  .samples { display: flex; align-items: center; gap: 24px; margin-bottom: 16px; min-height: 34px; }
+  .samples { display: flex; align-items: baseline; gap: 24px; margin-bottom: 16px; min-height: 34px; }
+  .samples .micro { flex: none; }
+  .samples .tabs { row-gap: 2px; }
   .status { font-size: 14px; line-height: 1.43; color: var(--g300); min-height: 20px; margin: 0 0 12px; }
+  .netline { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: -4px 0 14px; font-size: 14px;
+    line-height: 1.43; color: var(--g300); }
+  .netline .micro { margin-right: 12px; }
+  .netline code { font-family: Consolas, "Courier New", monospace; font-size: 13px; color: var(--white);
+    background: var(--near-black); border: 1px solid var(--border); border-radius: var(--r); padding: 2px 6px; }
+  .netdot { width: 8px; height: 8px; border-radius: 50%; background: var(--g500); flex: none; }
+  .netdot.on { background: var(--green); }
+  .opt:disabled { opacity: .45; cursor: not-allowed; }
+  .opt:disabled:hover { border-color: var(--border); }
   .status.err { color: #ff6b6b; }
   .drop-active .stage { outline: 2px dashed var(--green); outline-offset: 4px; }
 
@@ -255,6 +266,12 @@
         </div>
       </div>
       <div class="samples"><span class="micro">Samples</span><div class="tabs" id="samples"></div></div>
+      <div class="netline" id="net" hidden>
+        <span class="micro">Another machine</span>
+        <span class="netdot" id="netdot"></span>
+        <span id="nettext"></span>
+        <button class="btn compact" id="netwatch" hidden>Watch</button>
+      </div>
       <p class="status" id="status" role="status"></p>
 
       <div class="stage" id="stage">
@@ -279,7 +296,7 @@
       <div class="stats" aria-live="off">
         <div class="stat"><div class="micro">Packet loss</div><div class="v num" id="s_loss">–</div><div class="s num" id="s_loss2">measured</div></div>
         <div class="stat"><div class="micro">Tiles lost</div><div class="v num" id="s_tiles">–</div><div class="s num" id="s_tiles2">this frame</div></div>
-        <div class="stat"><div class="micro">Without Phantom</div><div class="v num" id="s_pb">–</div><div class="s">PSNR vs original</div></div>
+        <div class="stat"><div class="micro">Without Phantom</div><div class="v num" id="s_pb">–</div><div class="s" id="s_pbs">PSNR vs original</div></div>
         <div class="stat key"><div class="micro">With Phantom</div><div class="v num" id="s_pp">–</div><div class="s num" id="s_gain">PSNR vs original</div></div>
         <div class="stat"><div class="micro">Repair time</div><div class="v num" id="s_inf">–</div><div class="s" id="s_inf2">per damaged frame</div></div>
         <div class="stat"><div class="micro">Pipeline</div><div class="v num" id="s_fps">–</div><div class="s num" id="s_rate">–</div></div>
@@ -536,10 +553,16 @@ async function poll() {
       $('#s_loss2').textContent = `${Math.round(a.pkts_per_frame)} packets per frame`;
       $('#s_tiles').textContent = a.tiles_lost;
       $('#s_tiles2').textContent = `of ${state.tiles} this frame`;
-      $('#s_pb').textContent = a.psnr_b.toFixed(1) + ' dB';
-      $('#s_pp').textContent = a.psnr_p.toFixed(1) + ' dB';
-      const g = a.psnr_p - a.psnr_b;
-      $('#s_gain').textContent = state.settings.left === 'original' ? 'PSNR vs original' : `${g >= 0 ? '+' : ''}${g.toFixed(1)} dB over the left side`;
+      if (a.psnr_p === null) {                    // live network stream: there is no original to compare
+        $('#s_pb').textContent = '–'; $('#s_pp').textContent = '–';
+        $('#s_pbs').textContent = 'Live: no original to compare'; $('#s_gain').textContent = 'Live: no original to compare';
+      } else {
+        $('#s_pb').textContent = a.psnr_b.toFixed(1) + ' dB';
+        $('#s_pp').textContent = a.psnr_p.toFixed(1) + ' dB';
+        $('#s_pbs').textContent = 'PSNR vs original';
+        const g = a.psnr_p - a.psnr_b;
+        $('#s_gain').textContent = state.settings.left === 'original' ? 'PSNR vs original' : `${g >= 0 ? '+' : ''}${g.toFixed(1)} dB over the left side`;
+      }
       $('#s_inf').textContent = a.infer_ms ? a.infer_ms.toFixed(0) + ' ms' : '–';
       $('#s_fps').textContent = a.fps.toFixed(0) + ' fps';
       $('#s_rate').textContent = `${a.mbps.toFixed(1)} Mbit/s of RTP`;
@@ -579,7 +602,22 @@ function sync() {
   $('#pauseicon').innerHTML = s.paused ? '<path d="M7 4l12 8-12 8z"/>' : '<path d="M8 5v14M16 5v14"/>';
   const src = state.source;
   [...$('#samples').children].forEach(t => t.classList.toggle('on', !!src && t.dataset.name === src.label));
+  // ---- stream from another machine
+  const n = state.net || {}, live = !!src && src.kind === 'network';
+  const orig = $('#baseline [data-v=original]');
+  orig.disabled = live;
+  orig.querySelector('.d').textContent = live ? 'Not available for a live stream' : 'What the sender sent';
+  $('#net').hidden = !n.listening && !n.error;
+  $('#netdot').className = 'netdot' + (n.active ? ' on' : '');
+  const ip = (n.ips && n.ips[0]) || 'this machine';
+  if (n.error) $('#nettext').textContent = n.error;
+  else if (live && n.active) $('#nettext').innerHTML = `Receiving live from <b>${n.sender}</b> over UDP ${n.port}. The loss slider drops packets as they arrive.`;
+  else if (live) $('#nettext').innerHTML = `Waiting for <b>${n.sender || 'the sender'}</b>: the stream stopped.`;
+  else if (n.active) $('#nettext').innerHTML = `A stream is arriving from <b>${n.sender}</b>.`;
+  else $('#nettext').innerHTML = `To stream from another machine on this network, run <code>python -m phantom.send</code> there (this machine is ${ip}).`;
+  $('#netwatch').hidden = !(n.active && !live);
 }
+$('#netwatch').onclick = () => openSource({network: true}, 'the network stream');
 ['loss', 'burst'].forEach(id => $('#' + id).addEventListener('input', e => {
   setRange(e.target, e.target.value);
   if (id === 'loss') $('#lossv').textContent = e.target.value + '%'; else $('#burstv').textContent = e.target.value + ' packets';

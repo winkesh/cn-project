@@ -171,6 +171,12 @@ class Handler(BaseHTTPRequestHandler):
                     r = open_source(url, "url", url[:80])
                 elif "webcam" in b:
                     r = open_source(str(int(b["webcam"])), "webcam", f"Webcam {int(b['webcam'])}")
+                elif "network" in b:                 # back to the stream arriving from another machine
+                    rx = ENGINE.rx
+                    if rx is None or not rx.peer or time.time() - rx.last_rx > 2:
+                        return self._json({"error": "no sender is streaming to this machine right now; run "
+                                                    "python -m phantom.send on the other machine"}, 400)
+                    r = open_source(rx.peer[0], "network", "")
                 else:
                     return self._json({"error": "nothing to open"}, 400)
                 self._json(r, 200 if "source" in r else 400)
@@ -296,8 +302,15 @@ def main():
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--weights", default="weights/repairnet.pt")
     ap.add_argument("--framegen", default="weights/framegen.pt")
+    ap.add_argument("--udp-port", type=int, default=5004,
+                    help="UDP port for streams from another machine (python -m phantom.send)")
     a = ap.parse_args()
-    ENGINE = Engine(a.weights, a.framegen)
+    ENGINE = Engine(a.weights, a.framegen, udp_port=a.udp_port)
+    if ENGINE.rx is not None:
+        print(f"listening for senders on UDP {a.udp_port}; on another machine run:  python -m phantom.send"
+              f"   (or --to {ENGINE.ips[0] if ENGINE.ips else '<this IP>'})", flush=True)
+    else:
+        print(f"[warn] {ENGINE.net_error}", flush=True)
     SAMPLES = find_samples()
     if SAMPLES:
         first = next(iter(SAMPLES))
