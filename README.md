@@ -32,13 +32,16 @@ lost**, within a 100 ms playout deadline.
 * **Baselines**: freeze, copy-tile, OpenCV inpainting, optical-flow extrapolation, NACK
   retransmission within the deadline, XOR FEC (RFC 5109 style), and TCP.
 
-## Setup (Windows, Python 3.12)
+## Setup (Python 3.12)
+From the project folder (works the same in cmd, PowerShell and VS Code's terminal):
 ```bash
-python -m venv %USERPROFILE%\.venvs\phantom
-%USERPROFILE%\.venvs\phantom\Scripts\activate
+python -m venv .venv
+.venv\Scripts\activate
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 pip install -r requirements.txt
 ```
+On Linux/macOS activate with `source .venv/bin/activate`. Without an NVIDIA GPU install plain
+`pip install torch torchvision` and use `--model flow` on the receiver.
 
 ## Data
 Standard open test sequences, covering four content types (all streamed and stored as 640x360 at ~30 fps):
@@ -82,43 +85,40 @@ random/bursty loss, side-by-side or wipe view are live controls. Video reaches t
 (fragmented MP4 over HTTP into Media Source Extensions), with an MJPEG fallback.
 
 ### Two-machine demo over a real network
-Machine A sends video, machine B receives and repairs it. Packets cross your real network (Wi-Fi or
-Ethernet) as UDP, and a relay on machine A adds controlled packet loss on top.
+One machine sends, the other receives and repairs. Both on the same Wi-Fi or hotspot, both with the repo
+installed (see Setup; `weights/repairnet.pt` is in the repo), commands run from the project folder.
 
+**Receiver machine** (ideally the one with an NVIDIA GPU), start it first:
+```bash
+python -m phantom.receive
 ```
- Machine A                                             Machine B
- sender --UDP--> relay :5000 (drops X %) ==network==> receiver :5004 (repairs, shows window)
-        <--------------- loss feedback -----------------------
+**Sender machine** (streams its webcam; finds the receiver on the network by itself):
+```bash
+python -m phantom.send
 ```
 
-1. **Both machines:** clone the repo and install (see Setup). `weights/repairnet.pt` is in the repo.
-   Machine B should have an NVIDIA GPU; without one, start the receiver with `--model flow`.
-2. **Both machines on the same network.** Find machine B's IP address (`ipconfig` on Windows,
-   `ip addr` on Linux), for example `192.168.1.42`.
-3. **Machine B (receiver):** start it first. Windows asks to allow Python through the firewall the first
-   time: allow it on private networks (it needs inbound UDP port 5004).
-   ```bash
-   python -m demo.receiver_view --port 5004
-   ```
-4. **Machine A (relay):** forwards to B and drops 10 % of the video packets.
-   ```bash
-   python -m phantom.live.relay --listen 5000 --to 192.168.1.42:5004 --loss 0.10
-   ```
-   `--model ge --burst 4` makes the loss bursty, `--delay 30` adds 30 ms of one-way delay. Restart it to
-   change the loss.
-5. **Machine A (sender):** a video file, or `--src 0` for the webcam.
-   ```bash
-   python -m phantom.live.sender --to 127.0.0.1:5000 --src path/to/video.mp4
-   ```
-   No video at hand? `python -m tools.fetch_clips` downloads the test clips into `data/`.
+That is all. The receiver window shows the same packets twice: left without Phantom, right with Phantom.
+Packet loss (10 % to start) is simulated as packets arrive at the receiver, on top of anything the real
+network loses; the sender prints the loss the receiver reports back.
 
-Machine B's window shows the same received packets twice: left without Phantom, right with Phantom.
-Keys: `c` cycles the left side (no repair, normal decoder, copy last tile), `a` outlines lost tiles,
-`f` full screen, `q` quits. The sender prints the loss the receiver reports back.
+| Receiver key | Does |
+|---|---|
+| `+` / `-` | packet loss up / down 5 % |
+| `b` | random or bursty loss |
+| `c` | left side: no repair, normal decoder (freeze), copy last tile |
+| `a` | outline the lost tiles |
+| `f` / `q` | full screen / quit |
 
-Notes: both machines must use the same `PHANTOM_RES` (default 360p; the receiver warns otherwise).
-The 360p stream needs about 20-30 Mbit/s, fine on Ethernet or decent Wi-Fi. To try everything on one
-machine, use `--to 127.0.0.1:5004` for the relay.
+Options: `python -m phantom.send --src video.mp4` streams a file instead of the webcam;
+`python -m phantom.receive --model flow` for a receiver without a GPU; `--loss 0.2` sets the starting loss.
+
+If the sender says *No receiver found*: some networks block broadcasts, so pass the address the receiver
+printed when it started: `python -m phantom.send --to 192.168.1.42`. The first time, Windows asks whether
+Python may use the network; allow it (on a phone hotspot that is a *public* network). Both machines must use
+the same `PHANTOM_RES` (default 360p).
+
+Advanced: `phantom.live.relay` + `phantom.live.sender` + `demo.receiver_view` put the loss in a separate
+relay process instead, with extra delay and jitter options (`python -m phantom.live.relay --help`).
 
 ## Experiments
 | ID | Varies | Fixed | Question |

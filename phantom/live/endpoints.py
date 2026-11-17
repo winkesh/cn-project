@@ -16,6 +16,31 @@ from ..receiver import FrameState, assemble
 from ..sender import Packetizer
 from ..tiles import letterbox, tile_mask_to_pixels
 
+DISCOVER = b"PHANTOM-FRAMES?"      # sender -> broadcast: is there a receiver on this network?
+ANNOUNCE = b"PHANTOM-FRAMES!"      # receiver -> sender: yes, here
+
+
+def local_ips() -> list[str]:
+    """This machine's LAN addresses (the default route's first)."""
+    ips = []
+    try:                                    # the address of the default route (no packet is sent)
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ips.append(s.getsockname()[0])
+        s.close()
+    except OSError:
+        pass
+    try:
+        ips += socket.gethostbyname_ex(socket.gethostname())[2]
+    except OSError:
+        pass
+    seen, out = set(), []
+    for ip in ips:
+        if ip not in seen and not ip.startswith(("127.", "169.254.")):
+            seen.add(ip)
+            out.append(ip)
+    return out
+
 
 class FrameSource:
     """Loops a video file, or reads a webcam if path is an int / digit string."""
@@ -54,6 +79,7 @@ class LiveSender:
         self.originals = originals          # optional dict frame_id -> original (demo only)
         self.bytes_sent = 0
         self.reported_loss = 0.0
+        self.last_feedback = 0.0          # time.time() of the last loss report from the receiver
         self._stop = threading.Event()
 
     def _poll_feedback(self):
@@ -67,6 +93,7 @@ class LiveSender:
             except ValueError:
                 continue
             self.reported_loss = fb.get("loss", 0.0)
+            self.last_feedback = time.time()
             # loss-aware refresh: tiles the receiver lost are re-sent next frame even if unchanged
             self.pk.force_refresh.update(fb.get("lost_tiles", []))
 
@@ -130,6 +157,17 @@ class LiveReceiver:
         self.bad = 0                         # packets that could not be decoded
         self.cap_us: dict[int, int] = {}   # frame_id -> sender capture time (us)
         self.us0 = 0
+        self.ssrc = None                     # current stream; a new SSRC (sender restarted) resets playout
+        self.loss_model = None               # optional: simulate packet loss on arrival (phantom.receive)
+        self.sim_dropped = 0
+        self.arrived = 0
+
+    def _new_stream(self):
+        self.states.clear()
+        self.cap_us.clear()
+        self.t0 = self.fid0 = self.next_fid = None
+        self._recent_lost.clear()
+        self._win_recv = self._win_exp = 0
 
     def playout_time(self, fid):
         """RTP-style playout: local arrival time of the first packet + (sender capture time of this frame
@@ -154,11 +192,22 @@ class LiveReceiver:
         try:
             while True:
                 data, addr = self.sock.recvfrom(65535)
+                if data == DISCOVER:          # a sender looking for a receiver on this network
+                    self.sock.sendto(ANNOUNCE, addr)
+                    continue
                 try:
                     p = Packet.decode(data)
                 except Exception:          # wrong format: most often the sender runs another PHANTOM_RES
                     self.bad += 1
                     continue
+                self.arrived += 1
+                if self.loss_model is not None and self.loss_model.lost():
+                    self.sim_dropped += 1      # simulated loss on arrival: as if the network had dropped it
+                    self.peer = addr
+                    continue
+                if p.ssrc != self.ssrc:        # first packet, or the sender restarted: start a new stream
+                    self.ssrc = p.ssrc
+                    self._new_stream()
                 now = time.perf_counter()
                 self.peer = addr
                 if self.t0 is None:
