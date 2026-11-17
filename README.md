@@ -81,12 +81,44 @@ decoder that drops damaged frames, or copy-last-tile), the right side shows Phan
 random/bursty loss, side-by-side or wipe view are live controls. Video reaches the browser as H.264
 (fragmented MP4 over HTTP into Media Source Extensions), with an MJPEG fallback.
 
-Two-machine demo over a real network:
-```bash
-# machine B (receiver):  python -m demo.receiver_view --port 5004
-# machine A (relay):     python -m phantom.live.relay --listen 5000 --to <B-ip>:5004 --loss 0.1
-# machine A (sender):    python -m phantom.live.sender --to 127.0.0.1:5000 --src 0
+### Two-machine demo over a real network
+Machine A sends video, machine B receives and repairs it. Packets cross your real network (Wi-Fi or
+Ethernet) as UDP, and a relay on machine A adds controlled packet loss on top.
+
 ```
+ Machine A                                             Machine B
+ sender --UDP--> relay :5000 (drops X %) ==network==> receiver :5004 (repairs, shows window)
+        <--------------- loss feedback -----------------------
+```
+
+1. **Both machines:** clone the repo and install (see Setup). `weights/repairnet.pt` is in the repo.
+   Machine B should have an NVIDIA GPU; without one, start the receiver with `--model flow`.
+2. **Both machines on the same network.** Find machine B's IP address (`ipconfig` on Windows,
+   `ip addr` on Linux), for example `192.168.1.42`.
+3. **Machine B (receiver):** start it first. Windows asks to allow Python through the firewall the first
+   time: allow it on private networks (it needs inbound UDP port 5004).
+   ```bash
+   python -m demo.receiver_view --port 5004
+   ```
+4. **Machine A (relay):** forwards to B and drops 10 % of the video packets.
+   ```bash
+   python -m phantom.live.relay --listen 5000 --to 192.168.1.42:5004 --loss 0.10
+   ```
+   `--model ge --burst 4` makes the loss bursty, `--delay 30` adds 30 ms of one-way delay. Restart it to
+   change the loss.
+5. **Machine A (sender):** a video file, or `--src 0` for the webcam.
+   ```bash
+   python -m phantom.live.sender --to 127.0.0.1:5000 --src path/to/video.mp4
+   ```
+   No video at hand? `python -m tools.fetch_clips` downloads the test clips into `data/`.
+
+Machine B's window shows the same received packets twice: left without Phantom, right with Phantom.
+Keys: `c` cycles the left side (no repair, normal decoder, copy last tile), `a` outlines lost tiles,
+`f` full screen, `q` quits. The sender prints the loss the receiver reports back.
+
+Notes: both machines must use the same `PHANTOM_RES` (default 360p; the receiver warns otherwise).
+The 360p stream needs about 20-30 Mbit/s, fine on Ethernet or decent Wi-Fi. To try everything on one
+machine, use `--to 127.0.0.1:5004` for the relay.
 
 ## Experiments
 | ID | Varies | Fixed | Question |

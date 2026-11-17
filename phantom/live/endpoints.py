@@ -123,6 +123,7 @@ class LiveReceiver:
         self._recent_lost: deque = deque(maxlen=30)
         self._win_recv = self._win_exp = 0
         self.late = 0
+        self.bad = 0                         # packets that could not be decoded
         self.cap_us: dict[int, int] = {}   # frame_id -> sender capture time (us)
         self.us0 = 0
 
@@ -151,7 +152,8 @@ class LiveReceiver:
                 data, addr = self.sock.recvfrom(65535)
                 try:
                     p = Packet.decode(data)
-                except (ValueError, Exception):
+                except Exception:          # wrong format: most often the sender runs another PHANTOM_RES
+                    self.bad += 1
                     continue
                 now = time.perf_counter()
                 self.peer = addr

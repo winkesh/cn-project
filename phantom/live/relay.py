@@ -22,7 +22,8 @@ class Relay:
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 << 20)
         self.sock.bind(("0.0.0.0", listen))
         self.sock.settimeout(0.002)
-        self.to = to
+        # resolve once: feedback is recognised by comparing the source IP, which is never a hostname
+        self.to = (socket.gethostbyname(to[0]), int(to[1]))
         self.sender_addr = None
         self.delay_ms, self.jitter_ms = delay_ms, jitter_ms
         self.seed = seed
@@ -83,12 +84,16 @@ def main():
     a = ap.parse_args()
     host, port = a.to.split(":")
     r = Relay(a.listen, (host, int(port)), a.loss, a.model, a.burst, a.delay, a.jitter).start()
-    print(f"relay :{a.listen} -> {a.to}  loss={a.loss:.0%} ({a.model}, burst {a.burst})  delay={a.delay} ms")
+    print(f"relay listening on UDP :{a.listen}, forwarding to {r.to[0]}:{r.to[1]}  "
+          f"loss={a.loss:.0%} ({a.model}, burst {a.burst})  delay={a.delay} ms   Ctrl+C to stop", flush=True)
     try:
         while True:
             time.sleep(2)
             tot = r.fwd + r.dropped
-            print(f"forwarded {r.fwd}  dropped {r.dropped}  ({100 * r.dropped / max(1, tot):.1f}%)")
+            if not tot:
+                print("waiting for the sender (point it at this relay's port)...", flush=True)
+                continue
+            print(f"forwarded {r.fwd}  dropped {r.dropped}  ({100 * r.dropped / max(1, tot):.1f}%)", flush=True)
     except KeyboardInterrupt:
         pass
 
